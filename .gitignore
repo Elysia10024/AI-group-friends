@@ -34,3 +34,8 @@ tmp/
 *.orig
 .DS_Store
 Thumbs.db
+
+# 你自己的群/私聊设定（按群号/QQ 建的文件是本地数据，不进仓库；只留模板）
+roles/*/groups/*.md
+!roles/*/groups/example.md
+roles/*/private/
