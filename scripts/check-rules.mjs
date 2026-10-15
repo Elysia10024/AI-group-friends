@@ -13,7 +13,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-const ROOT = 'E:/ai群友/qq-bridge-main';
+const ROOT = '<项目目录>/qq-bridge-main';
 const fail = [];
 const warn = [];
 const ok = [];

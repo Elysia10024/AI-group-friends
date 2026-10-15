@@ -1,4 +1,4 @@
-// 嗓音配方（E:\ai群友\tts\her-voice.json）的静态体检：**这个文件是她的声音的唯一真源**，
+// 嗓音配方（<项目目录>\tts\her-voice.json）的静态体检：**这个文件是她的声音的唯一真源**，
 // 写坏了不会有任何报错 —— worker 只在启动时读一次，读失败就是"她不会说话了"，
 // 而且 2026-10-06 我自己就在这个文件里踩过一次：JSON 字符串里写了 ASCII 双引号（嫌"听不清"），
 // 文件当场解析不了（好在 worker 还捧着内存里那份旧配置，没炸）。
@@ -7,7 +7,7 @@
 //   node scripts/check-voice-spec.mjs
 import fs from 'node:fs';
 
-const SPEC = 'E:/ai群友/tts/her-voice.json';
+const SPEC = '<项目目录>/tts/her-voice.json';
 const PARTICLES = '吧啊啦呀哦嘛噢咯吗呢呗嘞喽喔';
 
 let failed = 0;
@@ -57,7 +57,7 @@ else bad(`question_rise 不完整：${JSON.stringify(rise)}`);
 
 // 主人 2026-10-06 明确要求：句尾语气词一律轻声（含疑问句的「吗/呢」）。
 // serve.py 的 PARTICLES 与这里的说明必须对得上，否则"她看到的规则"和"代码做的事"会打架。
-const serveSrc = fs.readFileSync('E:/ai群友/tts/serve.py', 'utf8');
+const serveSrc = fs.readFileSync('<项目目录>/tts/serve.py', 'utf8');
 const m = /PARTICLES\s*=\s*'([^']+)'/.exec(serveSrc);
 if (!m) bad('serve.py 里找不到 PARTICLES 定义（轻声词表）');
 else {

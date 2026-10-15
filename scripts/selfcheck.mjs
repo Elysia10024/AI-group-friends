@@ -7,7 +7,7 @@
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 
-const ROOT = 'E:/ai群友/qq-bridge-main';
+const ROOT = '<项目目录>/qq-bridge-main';
 const QUICK = process.argv.includes('--quick');
 const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
 
@@ -93,7 +93,7 @@ console.log(bad ? `\n❌ ${bad} 项没过 —— 去看上面的明细。` : '\n
 
 // 留一份滚动日志（watchdog 用它判断"今天体检过没有"）
 try {
-  fs.appendFileSync('E:/ai群友/logs/selfcheck.log', `${head}\n${rows.map((r) => `  ${r.ok ? 'OK  ' : 'FAIL'} ${r.name}: ${r.line}`).join('\n')}\n\n`, 'utf8');
+  fs.appendFileSync('<项目目录>/logs/selfcheck.log', `${head}\n${rows.map((r) => `  ${r.ok ? 'OK  ' : 'FAIL'} ${r.name}: ${r.line}`).join('\n')}\n\n`, 'utf8');
 } catch { /* 日志写不了不影响结论 */ }
 
 process.exit(bad ? 1 : 0);

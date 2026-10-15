@@ -67,7 +67,7 @@ registerMediaTools(server, { agentApi, cfg });
 // ── 表情包体系工具（二代仿真模式） ─────────────────────────────────────────
 registerStickerTools(server, { agentApi, cfg });
 
-// ── 本地图库（管理员在 E:\ai群友\image 放的梗图）────────────────────────────
+// ── 本地图库（管理员在 <项目目录>\image 放的梗图）────────────────────────────
 registerImageLibraryTools(server, { agentApi, cfg });
 
 // ── QQ 空间说说（她自己发的"自言自语"）──────────────────────────────────────

@@ -13,7 +13,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-const ROOT = 'E:/ai群友/qq-bridge-main';
+const ROOT = '<项目目录>/qq-bridge-main';
 const BASE = 'http://127.0.0.1:3100';
 const consoleToken = fs.readFileSync(path.join(ROOT, 'state', 'console-token'), 'utf8').trim();
 const cfg = JSON.parse(fs.readFileSync(path.join(ROOT, 'config.json'), 'utf8').replace(/^\uFEFF/, ''));
@@ -52,7 +52,7 @@ const ledgerBefore = (() => {
 })();
 
 // 挑一张"适合"的梗图（配图用；它本来就是公开的表情图，不会被这次测试弄脏）
-const libRaw = JSON.parse(fs.readFileSync('E:/ai群友/image/library.json', 'utf8').replace(/^\uFEFF/, ''));
+const libRaw = JSON.parse(fs.readFileSync('<项目目录>/image/library.json', 'utf8').replace(/^\uFEFF/, ''));
 const libImages = Array.isArray(libRaw) ? libRaw : (libRaw.images ?? []);
 const pick = libImages.find((i) => i.verdict === '适合' && i.by !== 'her') ?? libImages.find((i) => i.verdict === '适合');
 if (!pick) { console.error('❌ 图库里没有"适合"的图，配图这一步没法测'); process.exit(1); }

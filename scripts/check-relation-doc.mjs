@@ -1,6 +1,6 @@
 // 把文档里写的硬事实，逐条回代码/人格核对（避免"文档说的和实现不一致"）。
 import fs from 'node:fs';
-const ROOT = 'E:/ai群友/qq-bridge-main';
+const ROOT = '<项目目录>/qq-bridge-main';
 const doc = fs.readFileSync(`${ROOT}/docs/关系升降档规则.md`, 'utf8');
 const rel = fs.readFileSync(`${ROOT}/src/core/relation.js`, 'utf8');
 const core = fs.readFileSync(`${ROOT}/roles/小鲸鱼/core.md`, 'utf8');

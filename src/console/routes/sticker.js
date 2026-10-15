@@ -80,7 +80,7 @@ export async function handleSticker1(ctx) {
 
   /**
    * 本地图库列表（GET /api/socialV2/image-list）。
-   * 跟 QQ 收藏表情（sticker-list）并列：那套在 QQ 云端，这套在 E:\ai群友\image。
+   * 跟 QQ 收藏表情（sticker-list）并列：那套在 QQ 云端，这套在 <项目目录>\image。
    */
   async function routeImageList() {
     if (req.method === 'GET' && url.pathname === '/api/socialV2/image-list') {

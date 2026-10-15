@@ -18,12 +18,12 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-const HOME = 'E:/ai群友/dsh-home-legacy';
+const HOME = '<项目目录>/dsh-home-legacy';
 const CRED = `${HOME}/.credentials.yaml`;
 const SETTINGS = `${HOME}/settings.yaml`;
-const BRIDGE_CFG = 'E:/ai群友/qq-bridge-main/config.json';
-const KEY_FILE = 'E:/ai群友/tmp/new-key.txt';
-const BACKUP_DIR = 'E:/ai群友/tmp/provider-switch-backups';
+const BRIDGE_CFG = '<项目目录>/qq-bridge-main/config.json';
+const KEY_FILE = '<项目目录>/tmp/new-key.txt';
+const BACKUP_DIR = '<项目目录>/tmp/provider-switch-backups';
 const REF_NAME = 'INKSTONE_API_KEY';
 const GATEWAY = 'https://discovery-api.intern-ai.org.cn/v1';
 const MARK_BEGIN = '# === inkstone-gateway BEGIN (由 scripts/switch-provider.mjs 写入) ===';

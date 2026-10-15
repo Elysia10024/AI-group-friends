@@ -2,7 +2,7 @@
 //
 // 与 sticker 族（QQ 收藏表情）并列的第二套"发图"能力：
 //   · 收藏表情在 QQ 云端，加一张要上传到 QQ 收藏；
-//   · 本地图库在 E:\ai群友\image，加图 = 丢文件，语义 = library.json 里那句备注。
+//   · 本地图库在 <项目目录>\image，加图 = 丢文件，语义 = library.json 里那句备注。
 //
 // 每个工具都是薄壳：转发到桥接控制台的 /api/socialV2/image-* 路由，真正的读盘/发送在那侧。
 // 门控沿用它所属的"表情包体系"开关（socialV2.sticker.enabled / tools.listStickers / tools.sendSticker），

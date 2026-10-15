@@ -6,7 +6,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-const ROOT = 'E:/ai群友/qq-bridge-main';
+const ROOT = '<项目目录>/qq-bridge-main';
 const OUT = path.join(ROOT, 'docs/规则总表.md');
 const read = (p) => (fs.existsSync(p) ? fs.readFileSync(p, 'utf8') : '');
 

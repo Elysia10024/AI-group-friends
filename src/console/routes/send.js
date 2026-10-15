@@ -477,7 +477,7 @@ export async function handleSend2(ctx) {
    * 本地图库发图（POST /api/socialV2/send-image）。
    *
    * 与 send-sticker 的关系：表情包走 QQ 云端的收藏表情库；这条走本地文件夹
-   * （E:\ai群友\image，library.json 是唯一真相源）。两者共用同一套发送闸门与记录逻辑 ——
+   * （<项目目录>\image，library.json 是唯一真相源）。两者共用同一套发送闸门与记录逻辑 ——
    * 因为对她来说都是"发一张图"，没必要两套限额、两套记录。
    */
   async function routeSendImage() {

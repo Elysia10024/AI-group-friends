@@ -2,7 +2,7 @@
 //
 // 事故经过：autostart\watchdog.ps1 被存成 **UTF-8 无 BOM**，而计划任务是用
 // wscript -> powershell.exe（Windows PowerShell 5.1）拉起它的。5.1 在没有 BOM 时按
-// 系统 ANSI（这台机器是 GBK）解码 .ps1，于是代码里的 'E:\ai群友' 变成了 'E:\ai缇ゅ弸'：
+// 系统 ANSI（这台机器是 GBK）解码 .ps1，于是代码里的 '<项目目录>' 变成了 'E:\ai缇ゅ弸'：
 //   · 所有路径全部指到一个不存在的目录 → DSH / SnowLuma / 桥 一个都起不来；
 //   · 它自己的日志写进了那个乱码目录 → 用户盯着的 logs\watchdog.log 一直是旧的；
 //   · 它还在活着、还在每 45 秒转一圈，只是每圈都抛 LiteralPath 为空 —— 全链路没有任何红灯。
@@ -14,7 +14,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-const DIR = 'E:/ai群友/autostart';
+const DIR = '<项目目录>/autostart';
 const BOM = [0xef, 0xbb, 0xbf];
 
 const problems = [];

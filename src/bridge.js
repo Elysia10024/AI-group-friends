@@ -250,7 +250,7 @@ async function main() {
   let stickerEntries = loadStickerStore(STICKER_FILE);
   let stickerSyncedAt = 0; // 上次从 SnowLuma 拉取收藏表情的时间戳（毫秒）
   let lastForcedAgentStickerSync = 0; // AI 强制刷新表情库的最小间隔保护
-  // 本地图库（E:\ai群友\image）：管理员自己命名的梗图，按语境发。
+  // 本地图库（<项目目录>\image）：管理员自己命名的梗图，按语境发。
   // 与表情包模块并列，但真相源是本地文件夹 + library.json（改完下一轮生效，不用重启）。
   const imageLibraryMod = createImageLibraryModule({
     ROOT,

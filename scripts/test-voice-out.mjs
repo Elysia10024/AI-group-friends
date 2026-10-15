@@ -62,7 +62,7 @@ check('拒在合成之前（没白烧 GPU）', quotedMs < 1000, `${quotedMs}ms`)
 // 种子（2026-10-06 第十六轮）：F5-TTS 默认每次自抽随机种子 → 同一句话每次都是新的一版"发挥"，
 // 语气/节奏/音色都会漂（主人当时的原话："音色不对，怎么不是之前我们商量好的那种"）。
 // 所以：固定种子 → 必须可复现；还没固定 → 每次至少要知道用的是哪个种子（好回查是哪一版）。
-const specPath = 'E:/ai群友/tts/her-voice.json';
+const specPath = '<项目目录>/tts/her-voice.json';
 const spec = JSON.parse(fs.readFileSync(specPath, 'utf8').replace(/^\uFEFF/, ''));
 if (spec.seed != null) {
   const a = await voiceOut.synthesize('这是可复现性检查');

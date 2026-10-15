@@ -2,7 +2,7 @@
 //
 // 链路（2026-10-06 打通）：
 //   工具 qq_send_voice → 控制台路由 /api/socialV2/send-voice → 本模块
-//     → 本机常驻 TTS worker（E:\ai群友\tts\serve.py，127.0.0.1:3210，F5-TTS + 她的嗓音配方）
+//     → 本机常驻 TTS worker（<项目目录>\tts\serve.py，127.0.0.1:3210，F5-TTS + 她的嗓音配方）
 //     → 拿到 wav → OneBot 发 record 段 → SnowLuma 转 SILK 上传（网关自带，已验证）
 //
 // 为什么硬边界放在这里（不靠她自觉）：
