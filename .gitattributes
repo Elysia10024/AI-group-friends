@@ -1,0 +1,20 @@
+# 行尾策略：仓库内统一用 LF。
+#
+# 为什么：这个项目在 Windows 上开发（SnowLuma 只有 Windows 版），但公开之后别人可能在 Linux/macOS
+# 上读或跑部分脚本 —— 那时 CRLF 会让 `#!/usr/bin/env node` 之类的 shebang 失效、shell 脚本报错。
+# 仓库里存 LF、检出时也保持 LF，跨平台最安全。
+* text=auto eol=lf
+
+# 真正的二进制，别做行尾或编码转换
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.mp4 binary
+*.wav binary
+*.mp3 binary
+*.pcm binary
+*.silk binary
+*.zstd binary
+*.asar binary
