@@ -1,0 +1,279 @@
+{
+  "_comment": [
+    "这是 config.json 的模板，敏感值已替换为占位符。",
+    "用法：复制成 config.json，把 <在这里填你自己的值> 换成真实值。",
+    "config.json 已被 .gitignore 排除，不会进版本库。",
+    "生成时间：2026-10-05T17:44:38.499Z"
+  ],
+  "dsh": {
+    "baseUrl": "http://127.0.0.1:3080",
+    "provider": "deepseek-official",
+    "model": "deepseek-v4-flash-vision-exp",
+    "reasoningEffort": "high"
+  },
+  "snowluma": {
+    "wsUrl": "ws://127.0.0.1:3001",
+    "httpUrl": "http://127.0.0.1:3000",
+    "accessToken": "<在这里填你自己的值>",
+    "launcherPath": "E:\\ai群友\\SnowLuma\\launcher.bat",
+    "homeDir": "E:\\ai群友\\SnowLuma",
+    "allowProcessControl": false
+  },
+  "ownerQQ": 10000001,
+  "sessionCwd": "",
+  "agentPreset": "qq-chat",
+  "workspaceTitle": "QQ 聊天",
+  "allow": {
+    "private": [
+      10000001,
+      10000004
+    ],
+    "groups": [
+      20000001,
+      20000002,
+      20000003
+    ]
+  },
+  "deny": {
+    "private": [],
+    "groups": []
+  },
+  "allowAllWhenEmpty": false,
+  "ackMessage": "",
+  "sendDelayMs": 300,
+  "questionTimeoutMs": 300000,
+  "consolePort": 3100,
+  "consoleToken": "",
+  "security": {
+    "interceptNotify": true
+  },
+  "slang": {
+    "enabled": true,
+    "extractMinMessages": 4,
+    "extractCooldownMs": 120000,
+    "inferenceThresholds": [
+      2,
+      4,
+      8
+    ],
+    "injectMax": 20,
+    "learnerPreset": "qq-chat",
+    "workspaceTitle": "QQ 黑话学习",
+    "autoResearch": true
+  },
+  "social": {
+    "maxReplyChars": 500,
+    "mustReplyKeywords": [
+      "deepseek",
+      "小鲸鱼",
+      "大肥鱼",
+      "鲸鱼",
+      "d指导",
+      "在吗"
+    ],
+    "contextWindow": 20,
+    "triggerProbability": 0.1,
+    "activeCheckMinMs": 8000,
+    "activeCheckMaxMs": 30000,
+    "idleWindowMs": 360000,
+    "idleRetryProbability": 0.4,
+    "proactiveEnabled": true,
+    "proactiveIdleThresholdMs": 1800000,
+    "proactiveCheckMinMs": 2700000,
+    "proactiveCheckMaxMs": 5400000,
+    "proactiveProbability": 0.2,
+    "activeReplyDelayMinMs": 1000,
+    "activeReplyDelayMaxMs": 5000,
+    "activeDurationEnabled": true,
+    "activeDurationMinMs": 1200000,
+    "activeDurationMaxMs": 3000000,
+    "skipProbability": 0.05,
+    "surrenderProbability": 0,
+    "idleRetryWaitMs": 120000,
+    "burstEnabled": true,
+    "burstIntervalMinMs": 1000,
+    "burstIntervalMaxMs": 3000,
+    "longGapProbability": 0.2,
+    "longGapMinMs": 5000,
+    "longGapMaxMs": 10000
+  },
+  "socialV2": {
+    "enabled": true,
+    "autoReplyCheckMs": 30000,
+    "agentPreset": "qq-chat-v2",
+    "provideRecommendations": true,
+    "tools": {
+      "getPrompt": true,
+      "getUnread": true,
+      "getRecent": true,
+      "socialState": true,
+      "sendGroup": true,
+      "sendPrivate": true,
+      "reply": true,
+      "sendBurst": true,
+      "sendMessage": true,
+      "waitMessages": true,
+      "feedback": true,
+      "getMyRecent": true,
+      "getMessageDetail": true,
+      "getActiveMembers": true,
+      "setWakeConfig": true,
+      "markRead": true,
+      "memory": true,
+      "slangQuery": true,
+      "slangSubmit": true,
+      "getImages": true,
+      "getForwardMsg": true,
+      "sendPoke": true,
+      "listStickers": true,
+      "getStickerImage": true,
+      "sendSticker": true,
+      "setStickerRemark": false,
+      "stickerNote": true,
+      "collectSticker": true,
+      "getSelfImage": true,
+      "sendVoice": true
+    },
+    "voiceOut": {
+      "workerUrl": "http://127.0.0.1:3210",
+      "allowGroups": true,
+      "maxChars": 20,
+      "minIntervalMs": 180000,
+      "dailyCap": 20,
+      "groupMinIntervalMs": 600000,
+      "groupDailyCap": 4
+    },
+    "wake": {
+      "defaultMode": "diving",
+      "preSleepWaitEnabled": false,
+      "preSleepWaitMs": 120000,
+      "recommendedDefaultInfinite": true,
+      "sleepMinMs": 60000,
+      "sleepMaxMs": 0,
+      "recommendedSleepMinMs": 300000,
+      "recommendedSleepMaxMs": 7200000,
+      "recommendedProbability": 0,
+      "recommendedKeywords": [
+        "DeepSeek",
+        "deepseek",
+        "DS",
+        "D老师",
+        "d老师",
+        "D指导",
+        "d指导",
+        "D师傅",
+        "d师傅",
+        "深度求索",
+        "大肥鱼",
+        "DeepSeek V3",
+        "DeepSeek R1",
+        "R1"
+      ],
+      "recommendedAtMention": true,
+      "recommendedNameMention": true,
+      "recommendedQuestion": false,
+      "recommendedPoke": true,
+      "recommendedHint": "你不是只能被叫才说话：被 @/叫名字/拍一拍/直接问时必须回；此外群里有你能接、有意思、有态度的话题，也可以自然插一句，不用每条都参与，也不用一直沉默。收尾别刻意等：设好下一次唤醒条件就收尾（qq_set_wake_config），长时间等会占住会话、别人 @ 你时要排队。潜水时长推荐 5~120 分钟；常态潜水锁开着时，概率/提问/任意消息由桥接固定关闭（设了也不生效），稳定生效的是 @/名字/拍一拍/白名单关键词。要等某个人时可以临时订阅他（triggers.speakerIds，成本开关：他说任何话都唤醒你），管理员也能在私聊里让你加/取消。",
+      "batchWindowMs": 2000,
+      "maxWakePerMinute": 3,
+      "maxWakePerHour": 60,
+      "noActionLimit": 3,
+      "maxWakeConfigReminders": 2,
+      "maxMustWakePerMinute": 12,
+      "maxMustWakePerHour": 200,
+      "policy": "mentionsOnly",
+      "allowedKeywords": [
+        "DeepSeek",
+        "deepseek",
+        "DS",
+        "D老师",
+        "d老师",
+        "D指导",
+        "d指导",
+        "D师傅",
+        "d师傅",
+        "深度求索",
+        "大肥鱼",
+        "DeepSeek V3",
+        "DeepSeek R1",
+        "R1"
+      ]
+    },
+    "send": {
+      "burstEnabled": true,
+      "burstMaxMessages": 8,
+      "burstIntervalMinMs": 1000,
+      "burstIntervalMaxMs": 3000,
+      "longGapProbability": 0.2,
+      "longGapMinMs": 5000,
+      "longGapMaxMs": 10000,
+      "maxSendPerMinute": 8,
+      "maxSendPerHour": 80,
+      "maxMessageChars": 500,
+      "maxGapMs": 10000,
+      "gapBaseMs": 800,
+      "gapPerCharMs": 20,
+      "recommendedHint": "普通对话默认 1 条、最多 2 条；讲故事/回忆/补刀时可以 2~4 条。条间 1~3 秒，讲故事可以 5~10 秒；不要连续刷屏。"
+    },
+    "wait": {
+      "defaultMs": 10000,
+      "minMs": 5000,
+      "maxMs": 15000,
+      "defaultQuietMs": 8000,
+      "minQuietAfterNewMs": 10000
+    },
+    "sticker": {
+      "enabled": true,
+      "syncTtlMs": 60000,
+      "maxListCount": 100,
+      "includeInPrompt": true,
+      "promptMaxStickers": 8,
+      "collect": {
+        "enabled": true,
+        "maxPerMinute": 2,
+        "maxPerHour": 10,
+        "maxRemarkChars": 20
+      }
+    },
+    "proactive": {
+      "_comment": "主动冒泡：每个会话每 18~24 小时掷一次（4 个会话 ≈ 每天 4 次检查 × 概率 0.85 ≈ 3~4 次/天总计）；群安静 ≥15 分钟且没人正跟你聊时才可能冒一句；深夜概率 ×0.3。",
+      "enabled": true,
+      "checkIntervalMinMs": 64800000,
+      "checkIntervalMaxMs": 86400000,
+      "idleThresholdMs": 900000,
+      "probability": 0.85
+    },
+    "feedback": {
+      "maxLength": 500,
+      "notifyOwnerOnError": false
+    },
+    "alert": {
+      "_comment": "她连续多轮调不通（key 失效/余额不足/模型不可用/网络）时私聊告诉主人。第一次立刻报，同一场故障每 repeatIntervalMs 最多再报一次，恢复正常再报一声「已恢复」。判定与文案在 src/core/alert.js（有单测）；只在私聊发，群里一个字都不提。改成 enabled:false 就回到「每轮失败都发一条」的老行为。",
+      "enabled": true,
+      "repeatIntervalMs": 1800000
+    },
+    "context": {
+      "_comment_mentionTtlMs": "「有人在找你」的有效期：超过这个时间的 @/拍/名字不再投给她、也不再算待回应（默认 2 小时）。已回过的会被立刻销账，与此无关。",
+      "mentionTtlMs": 7200000,
+      "recentLimit": 150,
+      "unreadLimit": 60,
+      "contextWindow": 30,
+      "inlineMessages": 20,
+      "assembler": {
+        "enabled": true,
+        "shadow": true
+      },
+      "memoryMaxTraits": 4,
+      "memoryTraitChars": 200,
+      "memoryMaxMembers": 24
+    },
+    "followUp": {
+      "enabled": true,
+      "windowMs": 180000,
+      "maxPerWindow": 2,
+      "speakerLookbackMs": 120000
+    }
+  },
+  "groupAdmins": {},
+  "_comment_groupAdmins": "被委派的群管理员：{ \"群号\": [QQ, ...] }（现在是空的，没人被授权）。填一个 QQ 进去，他同时得到两件事：① 在**那个群**里管她（也能私聊管，但私聊里必须显式带群号，例如 /安静 20000003）；② **能私聊她、跟她正常聊天**（2026-10-03 选的\"完整私聊\"）；从名单里删掉 = 私聊立刻回到未授权会话。他能用的指令只有 /订阅、/取消订阅、/订阅列表、/status、/安静、/恢复；切角色、全局静默(/silent)、清记忆、改设置、别的群、你和她的私聊——一律拒绝并留 [admin] 日志。判据 src/core/group-admin.js（带单测），接线回归 npm run test:admin。改完重启桥生效。"
+}
