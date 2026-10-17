@@ -217,8 +217,10 @@ qq-bridge/
 | `@snowluma/sdk` / `@snowluma/mcp` | ⚠️ 声明 `SEE LICENSE IN LICENSE`，但包内无 LICENSE 文件 | 通过 npm 依赖使用 |
 | `@modelcontextprotocol/sdk` / `zod` / `js-yaml` | MIT / ISC | 见各自包内 LICENSE |
 
-> ⚠️ **商用注意**：本仓库自身代码是 MIT，但它依赖的 **SnowLuma 明确禁止商业使用**。
-> 打算商用的，需要先取得 SnowLuma 的书面授权。
+> 🚫 **本项目禁止商业使用。**
+> 本仓库新增与修改的部分采用「MIT + 附加非商业条款」（见 [LICENSE](LICENSE)）：不得用于任何商业目的，
+> 违反即授权终止。它依赖的 **SnowLuma 同样明确禁止商业使用**。
+> 需要商用请先联系维护者取得**书面授权**。
 
 ## 合规提醒
 
