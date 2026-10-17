@@ -190,6 +190,36 @@ qq-bridge/
 - agent 的 Markdown 回复会转成纯文本（链接保留 `文字 (url)` 形式）
 - `@snowluma/sdk` 的 npm 发布版存在 ESM 扩展名 bug，本仓库通过 postinstall 补丁修复（见 `scripts/patch-snowluma-sdk.mjs`）
 
+## 致谢与来源
+
+本项目基于 **[Derpyu520/qq-bridge](https://github.com/Derpyu520/qq-bridge)** 修改与扩展：
+
+| | |
+| --- | --- |
+| 原始项目 | <https://github.com/Derpyu520/qq-bridge> |
+| 版权 | Copyright (c) 2026 Derpyu520 and qq-bridge / QSH contributors |
+| 许可 | MIT，全文见 [LICENSE](LICENSE) |
+
+**相比原项目，本仓库增加了：**
+
+- 跨会话记忆系统（今日状态 / 待跟进 / 每日维护脚本）
+- 人格目录结构（`roles/<角色>/core.md` + 速记 + 按群/按人设定）
+- 带权限判定（`verdict`）的本地图库
+- 一键安装向导（[SETUP.md](SETUP.md) / `scripts/wizard.ps1` / `一键安装.bat`）
+- 语音搭建教程（[docs/VOICE_SETUP.md](docs/VOICE_SETUP.md)）
+
+**第三方组件及其许可：**
+
+| 组件 | 许可 | 说明 |
+| --- | --- | --- |
+| [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) | MIT | AI 内核与官方 API 客户端 |
+| [SnowLuma](https://github.com/SnowLuma/SnowLuma) | 源码可见·**非商业** | 本仓库不分发其源码或二进制，只通过 OneBot v11 协议通信 |
+| `@snowluma/sdk` / `@snowluma/mcp` | ⚠️ 声明 `SEE LICENSE IN LICENSE`，但包内无 LICENSE 文件 | 通过 npm 依赖使用 |
+| `@modelcontextprotocol/sdk` / `zod` / `js-yaml` | MIT / ISC | 见各自包内 LICENSE |
+
+> ⚠️ **商用注意**：本仓库自身代码是 MIT，但它依赖的 **SnowLuma 明确禁止商业使用**。
+> 打算商用的，需要先取得 SnowLuma 的书面授权。
+
 ## 合规提醒
 
 SnowLuma 是独立第三方项目，与腾讯/QQ 无隶属关系，仅供学习与技术研究；使用前请阅读其 EULA 与《QQ 用户协议》。
