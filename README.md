@@ -2,6 +2,9 @@
 
 **English**: [README.en.md](README.en.md) | **中文**: [README.md](README.md)
 
+> 🚀 **第一次装？直接看 [SETUP.md](SETUP.md)** —— 从零开始的安装指南，不用懂命令、不用手改配置。
+> 本文件偏技术说明，写给已经跑起来、想了解架构细节的人。
+
 > 📘 详细内外核说明书见 **[docs/PROJECT_GUIDE.md](docs/PROJECT_GUIDE.md)**（架构、数据流、配置全解、调试与改进指南）。
 
 把 QQ 消息接入 DSH agent：QQ 好友/群发来的消息会变成 DSH 会话里的用户消息，agent 的回复（含提问、工具审批）会发回 QQ。
