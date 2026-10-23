@@ -90,6 +90,16 @@
 
 ---
 
+## 关于 B 站（可选）
+
+B 站能力（订阅播报 / 看群友分享的视频 / 空闲自刷）默认不是开箱即用的，按需配置：
+
+- 订阅播报：`config.json` 的 `bilibili` 段，或控制台 06d 面板；
+- 看视频：需要 B 站登录态（`state/bilibili-cookie.json` 里的 SESSDATA）才能拿评论；
+- **画面抽帧是可选的**：装 `yt-dlp` + `ffmpeg`，并在 `biliLook.pythonPath` / `ffmpegPath` 指向它们；没装就只有文字和评论，她会说没看到画面，不会编。
+
+---
+
 ## 装好之后怎么用
 
 | 我想…… | 怎么做 |

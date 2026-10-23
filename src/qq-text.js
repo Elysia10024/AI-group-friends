@@ -12,6 +12,7 @@
 // 正文与搬迁前**逐字相同**，只有上述 2 处裸名字被改写成 `ctx.X`；
 // 搬迁时用"逆变换逐字还原原文"证明过这一点。
 import { voiceLabel } from './core/voice-label.js';
+import { cardToText } from './core/qq-card.js';
 
 export function createQqTextModule(ctx) {
   const {
@@ -122,7 +123,7 @@ async function segmentsToText(segments, options = {}) {
         out.push(replyText || '[引用消息]');
         break;
       }
-      case 'json': out.push('[卡片消息]'); break;
+      case 'json': out.push(cardToText(d)); break;
       case 'forward': {
         const fid = forwardIdFromData(d);
         out.push(fid ? `[转发消息 id=${fid}]` : '[转发消息]');

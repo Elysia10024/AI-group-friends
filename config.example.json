@@ -274,6 +274,39 @@
       "speakerLookbackMs": 120000
     }
   },
+  "bilibili": {
+    "enabled": false,
+    "intervalMs": 600000,
+    "activeHours": [8, 24],
+    "maxAgeMs": 86400000,
+    "maxPerRun": 5,
+    "requestGapMs": 2000,
+    "pages": 2,
+    "template": "{alias} 发新视频了\n{title}\n{url}",
+    "targets": []
+  },
+  "biliLook": {
+    "enabled": true,
+    "dailyPerUser": 1,
+    "ownerBypass": true,
+    "maxComments": 5,
+    "withFrames": true,
+    "frameIntervalSec": 2,
+    "maxFrames": 150,
+    "maxDurationSec": 300,
+    "pythonPath": "",
+    "ffmpegPath": "",
+    "downloadTimeoutMs": 180000
+  },
+  "biliScroll": {
+    "enabled": false,
+    "intervalMs": 3600000,
+    "maxPerDay": 6,
+    "maxWakePerDay": 6,
+    "maxDurationSec": 300,
+    "withFrames": true,
+    "groupKey": ""
+  },
   "groupAdmins": {},
   "_comment_groupAdmins": "被委派的群管理员：{ \"群号\": [QQ, ...] }（现在是空的，没人被授权）。填一个 QQ 进去，他同时得到两件事：① 在**那个群**里管她（也能私聊管，但私聊里必须显式带群号，例如 /安静 20000003）；② **能私聊她、跟她正常聊天**（2026-10-03 选的\"完整私聊\"）；从名单里删掉 = 私聊立刻回到未授权会话。他能用的指令只有 /订阅、/取消订阅、/订阅列表、/status、/安静、/恢复；切角色、全局静默(/silent)、清记忆、改设置、别的群、你和她的私聊——一律拒绝并留 [admin] 日志。判据 src/core/group-admin.js（带单测），接线回归 npm run test:admin。改完重启桥生效。"
 }

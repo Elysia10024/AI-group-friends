@@ -95,6 +95,9 @@ import { createRolesModule } from './domains/roles.js';
 import { createIdsModule } from './ids.js';
 import { createDshWatchModule } from './domains/dsh-watch.js';
 import { createPromptQueueModule } from './domains/prompt-queue.js';
+import { createBilibiliModule } from './domains/bilibili.js';
+import { createBiliLookModule } from './domains/bili-look.js';
+import { createBiliScrollModule } from './domains/bili-scroll.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
@@ -1434,8 +1437,46 @@ async function main() {
       await sendWakePromptV2(key, 'qzoneComment');
     },
   });
+  // B 站订阅播报（可选）：只读轮询投稿视频，新款直接发群（不花模型钱）。
+  const bilibiliMod = createBilibiliModule({
+    cfg,
+    log,
+    onebotSend,
+    sendToQQ,
+    readRoleState,
+    stateDir: STATE_DIR,
+    sleep,
+  });
+  bilibiliMod.startBilibiliWatch();
+  // 看群友分享的 B 站视频（可选）：配额与分享者判定都在桥接侧。
+  const biliLookMod = createBiliLookModule({
+    cfg,
+    log,
+    stateDir: STATE_DIR,
+    readJsonSafe,
+    atomicWriteJson,
+    getSocialV2State,
+  });
+  // 空闲时段自己刷（可选）：groupKey 留空时落到 allow.groups[0]。
+  const biliScrollMod = createBiliScrollModule({
+    cfg,
+    log,
+    stateDir: STATE_DIR,
+    readJsonSafe,
+    atomicWriteJson,
+    biliLook: biliLookMod,
+  });
+  const scrollGroup = String(cfg.biliScroll?.groupKey || cfg.allow?.groups?.[0] || '');
+  if (scrollGroup) {
+    biliScrollMod.start({ onWake: () => sendWakePromptV2(scrollGroup, 'biliScroll') });
+  } else {
+    log('[bili-scroll] 未配置 groupKey 且 allow.groups 为空，跳过启动');
+  }
   startConsoleServer({
     cfg,
+    bilibili: bilibiliMod,
+    biliLook: biliLookMod,
+    biliScroll: biliScrollMod,
     log,
     getSocialV2State,
     saveSocialV2State,

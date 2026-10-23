@@ -1269,7 +1269,140 @@ async function loadMood() {
     msg.textContent = '❌ ' + (error?.message ?? error);
   }
 }
-refresh(); refreshRoles(); refreshWhitelist(); refreshSessions(); refreshPending(); refreshPresets(); loadV2Config(); refreshV2Activity(); loadV2ToolLog(); loadV2SessionOptions(); refreshSlang(); loadSlangConfig(); loadSecurity(); loadContextShadow(); loadPeople(); loadMood();
+// ── B 站视频订阅（06d）────────────────────────────────────────────
+function biliFmtTime(ms) {
+  const n = Number(ms) || 0;
+  return n ? new Date(n).toLocaleString('zh-CN', { hour12: false }) : '—';
+}
+async function loadBilibili() {
+  const list = document.getElementById('biliTargets');
+  const msg = document.getElementById('biliMsg');
+  try {
+    const r = await api('/api/bilibili');
+    if (!r.ok) throw new Error(r.error || '读取失败');
+    const s = r.status || {};
+    document.getElementById('biliEnabled').checked = s.enabled === true;
+    document.getElementById('biliIntervalMin').value = Math.max(2, Math.round((Number(s.intervalMs) || 600000) / 60000));
+    document.getElementById('biliPages').value = Number(s.pages) || 2;
+    const hours = Array.isArray(s.activeHours) ? s.activeHours : [8, 24];
+    document.getElementById('biliHourStart').value = hours[0] ?? 8;
+    document.getElementById('biliHourEnd').value = hours[1] ?? 24;
+    document.getElementById('biliTemplate').value = s.template || '';
+    const targets = Array.isArray(s.targets) ? s.targets : [];
+    if (!targets.length) {
+      list.innerHTML = '<span class="meta">还没有监视目标</span>';
+    } else {
+      const rows = targets.map((t) => {
+        const groups = (t.groups || []).join(', ');
+        return `<tr><td>${esc(t.alias)}</td><td>${esc(t.uid)}</td><td>${esc(groups)}</td>`
+          + `<td>${t.enabled === false ? '<span class="meta">已暂停</span>' : '监视中'}</td>`
+          + `<td>${t.seenCount ?? 0} 条</td>`
+          + `<td>${biliFmtTime(t.updatedAt)}</td>`
+          + `<td><button class="small" data-bili-toggle="${esc(t.uid)}" data-bili-enabled="${t.enabled === false ? '1' : '0'}">${t.enabled === false ? '恢复' : '暂停'}</button> `
+          + `<button class="small danger" data-bili-del="${esc(t.uid)}" data-bili-alias="${esc(t.alias)}">取消</button></td></tr>`;
+      }).join('');
+      list.innerHTML = '<table><thead><tr><th>别名</th><th>UID</th><th>群</th><th>状态</th><th>已见</th><th>最近检查</th><th>操作</th></tr></thead><tbody>'
+        + rows + '</tbody></table>';
+    }
+    const last = s.lastSent;
+    document.getElementById('biliStatus').textContent =
+      `上次检查：${biliFmtTime(s.lastPollAt)}`
+      + (last ? ` ｜ 最近播报：${last.alias}《${last.title}》(${biliFmtTime(last.at)})` : '')
+      + (s.lastError ? ` ｜ 最近错误：${s.lastError}` : '');
+    msg.textContent = `共 ${targets.length} 个目标 · 白名单群：${(r.allowedGroups || []).join(', ') || '无'}`;
+  } catch (e) {
+    list.innerHTML = '<span class="meta">读取失败</span>';
+    msg.textContent = '❌ ' + (e?.message ?? e);
+  }
+}
+
+async function saveBilibiliConfig() {
+  const msg = document.getElementById('biliMsg');
+  const intervalMin = Number(document.getElementById('biliIntervalMin').value) || 10;
+  const body = {
+    enabled: document.getElementById('biliEnabled').checked,
+    intervalMs: Math.round(intervalMin * 60000),
+    pages: Number(document.getElementById('biliPages').value) || 2,
+    activeHours: [Number(document.getElementById('biliHourStart').value), Number(document.getElementById('biliHourEnd').value)],
+    template: document.getElementById('biliTemplate').value
+  };
+  msg.textContent = '保存中…';
+  try {
+    const r = await api('/api/bilibili/config', 'POST', body);
+    if (!r.ok) { msg.textContent = '❌ ' + (r.error || '保存失败'); return; }
+    msg.textContent = '✅ 已保存';
+    await loadBilibili();
+  } catch (e) { msg.textContent = '❌ ' + (e?.message ?? e); }
+}
+
+async function addBilibiliTarget() {
+  const msg = document.getElementById('biliMsg');
+  const uid = Number(document.getElementById('biliNewUid').value);
+  const alias = document.getElementById('biliNewAlias').value.trim();
+  const groups = document.getElementById('biliNewGroups').value.split(/[,，\s]+/).map(Number).filter(Boolean);
+  if (!uid) { msg.textContent = '❌ UID 不能为空'; return; }
+  if (!groups.length) { msg.textContent = '❌ 至少给一个群号'; return; }
+  msg.textContent = '新增中…';
+  try {
+    const r = await api('/api/bilibili/targets', 'POST', { uid, alias, groups });
+    if (!r.ok) { msg.textContent = '❌ ' + (r.error || '新增失败'); return; }
+    document.getElementById('biliNewUid').value = '';
+    document.getElementById('biliNewAlias').value = '';
+    document.getElementById('biliNewGroups').value = '';
+    msg.textContent = '✅ 已新增（第一轮只建基线，不补发历史）';
+    await loadBilibili();
+  } catch (e) { msg.textContent = '❌ ' + (e?.message ?? e); }
+}
+
+async function checkBilibili() {
+  const msg = document.getElementById('biliMsg');
+  msg.textContent = '检查中…';
+  try {
+    const r = await api('/api/bilibili/check', 'POST', {});
+    if (!r.ok) { msg.textContent = '❌ ' + (r.error || '检查失败'); return; }
+    const result = r.result || {};
+    const fresh = Array.isArray(result.fresh) ? result.fresh : [];
+    msg.textContent = fresh.length
+      ? `发现 ${fresh.length} 条新视频：` + fresh.map((v) => `${v.alias}《${v.title}》`).join('；')
+      : `没有新视频（检查 ${result.checked ?? 0} 个号，基线 ${result.baseline ?? 0} 个）`;
+    await loadBilibili();
+  } catch (e) { msg.textContent = '❌ ' + (e?.message ?? e); }
+}
+
+async function loadBiliLook() {
+  const hist = document.getElementById('biliHistory');
+  const quo = document.getElementById('biliQuotas');
+  try {
+    const r = await api('/api/bili-look/status');
+    if (!r.ok) throw new Error(r.error || '读取失败');
+    const history = Array.isArray(r.history) ? r.history : [];
+    if (!history.length) {
+      hist.innerHTML = '<span class="meta">今天还没看过视频</span>';
+    } else {
+      const rows = history.map((h) => `<tr><td>${biliFmtTime(h.at)}</td><td>${esc(h.bv)}</td>`
+        + `<td>${h.title ? esc(String(h.title).slice(0, 40)) : '<span class="meta">—</span>'}</td>`
+        + `<td>${esc(h.source === 'self' ? '自己刷' : (h.sharer?.sender || h.sharer?.userId || ''))}</td>`
+        + `<td>${h.frames ?? 0} 张</td></tr>`).join('');
+      hist.innerHTML = '<table><thead><tr><th>时间</th><th>BV</th><th>标题</th><th>来源</th><th>拼图</th></tr></thead><tbody>'
+        + rows + '</tbody></table>';
+    }
+    const quotas = Array.isArray(r.quotas) ? r.quotas : [];
+    if (!quotas.length) {
+      quo.innerHTML = '<span class="meta">今天还没有人用配额</span>';
+    } else {
+      const rows = quotas.map((q) => `<tr><td>${esc(q.group)}</td><td>${esc(q.name)}${q.owner ? ' · 管理员' : ''}</td>`
+        + `<td>${q.count}/${r.limits?.dailyPerUser ?? 1}</td><td>${esc(q.lastBv || '—')}</td>`
+        + `<td>${biliFmtTime(q.at)}</td></tr>`).join('');
+      quo.innerHTML = '<table><thead><tr><th>群</th><th>分享者</th><th>今天已用</th><th>最后视频</th><th>时间</th></tr></thead><tbody>'
+        + rows + '</tbody></table>';
+    }
+  } catch (e) {
+    hist.innerHTML = '<span class="meta">读取失败</span>';
+    quo.innerHTML = '<span class="meta">' + esc(e?.message ?? String(e)) + '</span>';
+  }
+}
+
+refresh(); refreshRoles(); refreshWhitelist(); refreshSessions(); refreshPending(); refreshPresets(); loadV2Config(); refreshV2Activity(); loadV2ToolLog(); loadV2SessionOptions(); refreshSlang(); loadSlangConfig(); loadSecurity(); loadContextShadow(); loadPeople(); loadMood(); loadBilibili(); loadBiliLook();
 setInterval(() => { refresh(); refreshSessions(); refreshPending(); refreshSlang(); }, 3000);
 
 // 按钮绑定放在最后一行：控制台 UI 守卫（scripts/check-console-ui.mjs）会把"末尾的初始化段"
@@ -1277,3 +1410,24 @@ setInterval(() => { refresh(); refreshSessions(); refreshPending(); refreshSlang
 // "配置面板金标准"的快照里 —— 这个面板跟配置无关，不该进那份金标准。
 document.getElementById('peopleLoad').addEventListener('click', loadPeople);
 document.getElementById('moodLoad').addEventListener('click', loadMood);
+document.getElementById('biliSave').addEventListener('click', saveBilibiliConfig);
+document.getElementById('biliAdd').addEventListener('click', addBilibiliTarget);
+document.getElementById('biliCheck').addEventListener('click', checkBilibili);
+document.getElementById('biliLookRefresh').addEventListener('click', loadBiliLook);
+document.getElementById('biliTargets').addEventListener('click', async (ev) => {
+  const del = ev.target.closest('[data-bili-del]');
+  if (del) {
+    if (!confirm(`取消监视 ${del.dataset.biliAlias || del.dataset.biliDel}？`)) return;
+    const r = await api('/api/bilibili/targets/remove', 'POST', { uid: Number(del.dataset.biliDel) });
+    if (!r.ok) alert(r.error || '取消失败'); else loadBilibili();
+    return;
+  }
+  const tog = ev.target.closest('[data-bili-toggle]');
+  if (tog) {
+    const r = await api('/api/bilibili/targets', 'POST', {
+      uid: Number(tog.dataset.biliToggle),
+      enabled: tog.dataset.biliEnabled === '1'
+    });
+    if (!r.ok) alert(r.error || '操作失败'); else loadBilibili();
+  }
+});

@@ -368,6 +368,53 @@
       <div id="moodStatus" style="margin-top:8px">加载中…</div>
     </section>
 
+    <!-- ============ 06d B站视频订阅 ============ -->
+    <section class="card span-all">
+      <h2><span class="sec-no">06d</span>B 站视频订阅</h2>
+      <div class="meta">只读轮询 UP 主的投稿视频，有新视频就发到指定群。设置写入 config.json 并热更新；新增目标第一轮只建基线，不补发历史。播报不花模型钱。</div>
+
+      <div class="row" style="margin-top:10px">
+        <label style="flex:1">启用订阅</label><input type="checkbox" id="biliEnabled" style="width:auto">
+        <label style="flex:1">检查间隔（分钟）</label><input type="number" id="biliIntervalMin" min="2" max="60" style="width:80px">
+        <label style="flex:1">每个号翻页</label><input type="number" id="biliPages" min="1" max="3" style="width:70px">
+      </div>
+      <div class="row">
+        <label style="flex:1">活跃时段：从</label><input type="number" id="biliHourStart" min="0" max="24" style="width:70px">
+        <label style="flex:1">到</label><input type="number" id="biliHourEnd" min="0" max="24" style="width:70px">
+        <span class="meta" style="flex:2">时段外不轮询（0–24；24 表示到当天结束）。</span>
+      </div>
+      <label>播报模板（占位符：{alias} {title} {url}）</label>
+      <textarea id="biliTemplate" rows="2" placeholder="{alias} 发新视频了&#10;{title}&#10;{url}"></textarea>
+      <div class="row" style="margin-top:8px">
+        <button id="biliSave" style="font-weight:bold">保存设置</button>
+        <button id="biliCheck" class="small">立即检查（不发群）</button>
+        <button id="biliLookRefresh" class="small">刷新观看记录</button>
+        <span class="meta" id="biliMsg"></span>
+      </div>
+
+      <div class="divider"></div>
+      <div class="meta" style="margin-bottom:6px">监视列表（暂停 = 保留记录，但不再轮询这个号）</div>
+      <div id="biliTargets" style="margin-top:6px">加载中…</div>
+
+      <div class="divider"></div>
+      <div class="meta" style="margin-bottom:6px">新增监视</div>
+      <div class="row">
+        <input type="text" id="biliNewUid" placeholder="B站 UID，如 401742377">
+        <input type="text" id="biliNewAlias" placeholder="别名，如 原神">
+        <input type="text" id="biliNewGroups" placeholder="群号，逗号分隔，如 123456789">
+        <button id="biliAdd">新增</button>
+      </div>
+      <div class="meta" id="biliStatus" style="margin-top:8px">—</div>
+
+      <div class="divider"></div>
+      <div class="meta" style="margin-bottom:6px">今天看过的视频</div>
+      <div id="biliHistory" style="margin-top:6px">加载中…</div>
+
+      <div class="divider"></div>
+      <div class="meta" style="margin-bottom:6px">分享配额（按群/人；管理员豁免）</div>
+      <div id="biliQuotas" style="margin-top:6px">加载中…</div>
+    </section>
+
     <!-- ============ 08 黑话库 ============ -->
     <section class="card span-all">
       <h2><span class="sec-no">07</span>群聊黑话 / 网络用语库</h2>

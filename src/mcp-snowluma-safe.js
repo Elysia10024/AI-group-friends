@@ -22,6 +22,7 @@ import { registerMediaTools } from './mcp/tools/media.js';
 import { registerStickerTools } from './mcp/tools/sticker.js';
 import { registerImageLibraryTools } from './mcp/tools/image-library.js';
 import { registerQzoneTools } from './mcp/tools/qzone.js';
+import { registerBiliTools } from './mcp/tools/bili.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
@@ -72,5 +73,8 @@ registerImageLibraryTools(server, { agentApi, cfg });
 
 // ── QQ 空间说说（她自己发的"自言自语"）──────────────────────────────────────
 registerQzoneTools(server, { agentApi, cfg });
+
+// ── B 站视频（可选）：群友分享的视频，每人每天限一次（配额在桥接侧）──────────────
+registerBiliTools(server, { agentApi });
 
 await server.connect(new StdioServerTransport());

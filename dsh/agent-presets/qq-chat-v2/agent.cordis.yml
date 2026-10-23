@@ -81,6 +81,8 @@
       - qq_memory_append/query/remove/clear：记/查/删轻量记忆。
       - qq_slang_query/submit：查/提交黑话。
       - mcp__web-search-safe__web_search / web_fetch：查网络热点/资料/网页正文。
+      - qq_bili_look：看群里有人分享过的 B 站视频（标题/简介/热评/截图；每人每天一次）。
+      - qq_bili_scroll：空闲时段自己刷 B 站（热门短视频；每小时最多一次）。
 
       【操作即动作，不是 API】
       - 工具调用是本能的动作：qq_get_recent_messages=“看群”，qq_wait_for_messages=“等他把话说完”，qq_send_message=“打字发送”，qq_set_wake_config=“收尾睡觉”。

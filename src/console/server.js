@@ -26,6 +26,9 @@ import { handleSticker1, handleSticker2 } from './routes/sticker.js';
 import { handleMedia1, handleMedia2 } from './routes/media.js';
 import { handleMemory1 } from './routes/memory.js';
 import { handleQzone1 } from './routes/qzone.js';
+import { handleBilibili } from './routes/bilibili.js';
+import { handleBiliLook } from './routes/bili-look.js';
+import { handleBiliScroll } from './routes/bili-scroll.js';
 
 export function startConsoleServer(deps) {
   const {
@@ -419,6 +422,10 @@ export function startConsoleServer(deps) {
       if (await handleMemory1(ctx)) return;
       // QQ 空间说说：发表 / 删除 / 读列表（带 agent token）＋ 本地账本只读（面板用）
       if (await handleQzone1(ctx)) return;
+      // B 站（可选）：订阅配置 / 看群友分享的视频 / 空闲自刷
+      if (await handleBilibili(ctx)) return;
+      if (await handleBiliLook(ctx)) return;
+      if (await handleBiliScroll(ctx)) return;
       if (await handleSlang2(ctx)) return;
       if (await handleAdmin4(ctx)) return;
       if (await handleMedia2(ctx)) return;
