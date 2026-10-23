@@ -74,7 +74,7 @@ export function createImageLibraryModule(ctx) {
     if (!mimeType) throw new Error(`不支持的图片格式：${ext}（图库只放 jpg/png/webp/gif；AVIF 请先用 scripts/normalize-images.py 转一下）`);
     const buffer = fs.readFileSync(full);
     if (buffer.length > MAX_IMAGE_BYTES) throw new Error(`图片太大（${Math.round(buffer.length / 1024)}KB > ${Math.round(MAX_IMAGE_BYTES / 1024 / 1024)}MB）`);
-    return { image, buffer, mimeType, bytes: buffer.length };
+    return { image, buffer, mimeType, bytes: buffer.length, file: full };
   }
 
   /** 材料里那份紧凑清单。 */
@@ -107,12 +107,19 @@ export function createImageLibraryModule(ctx) {
    * @param {string} ref 图片名字（library.json 里的 name，或文件名）
    */
   async function sendLibraryImage(key, ref, options = {}) {
-    const { image, buffer, mimeType } = readImageData(ref);
+    const { image, buffer, mimeType, file } = readImageData(ref);
     if (!isSendable(image)) {
       throw new Error(`「${image.name}」被标记为不许发（${image.reason || '管理员判定'}），换一张`);
     }
     const [kind, id] = String(key).split(':');
     const segments = [];
+    // 网关的 OneBot HTTP 接口对请求体有硬上限：实测 2.0MB 能过、2.5MB 直接断连接（ECONNRESET，报 "fetch failed"）。
+    // base64 会再撑大 4/3 —— 1.9MB 的 GIF 就是 2.6MB 请求，动图一发就炸（2026-10-24 粉毛捧花.gif 连续两次失败）。
+    // 所以小图继续走 base64（OneBot 各实现都认，最通用），大图改走 file://（SnowLuma 支持本地路径，实测中文路径也可用），
+    // 不经过请求体，动图/大图不再受 2MB 限制。
+    const b64 = buffer.toString('base64');
+    const MAX_INLINE_BASE64 = 1_500_000;
+    const useLocalPath = b64.length > MAX_INLINE_BASE64;
     if (options.replyToMessageId !== undefined && options.replyToMessageId !== null && String(options.replyToMessageId).trim() !== '') {
       const rid = String(options.replyToMessageId).trim();
       if (!/^-?[1-9]\d*$/.test(rid)) throw new Error('replyToMessageId 必须是非零整数');
@@ -123,7 +130,7 @@ export function createImageLibraryModule(ctx) {
       if (!/^\d+$/.test(at)) throw new Error('atUserId 必须是正整数 QQ 号');
       segments.push({ type: 'at', data: { qq: at } });
     }
-    segments.push({ type: 'image', data: { file: `base64://${buffer.toString('base64')}` } });
+    segments.push({ type: 'image', data: { file: useLocalPath ? `file:///${file.replace(/\\/g, '/')}` : `base64://${b64}` } });
     const action = kind === 'private' ? 'send_private_msg' : 'send_group_msg';
     const params = kind === 'private' ? { user_id: Number(id), message: segments } : { group_id: Number(id), message: segments };
 
@@ -139,7 +146,7 @@ export function createImageLibraryModule(ctx) {
       }
     });
     const data = await result;
-    log?.(`[图库] 发送「${image.name}」(${Math.round(buffer.length / 1024)}KB ${mimeType}) 到 ${key}`);
+    log?.(`[图库] 发送「${image.name}」(${Math.round(buffer.length / 1024)}KB ${mimeType}${useLocalPath ? ' file://' : ''}) 到 ${key}`);
     return { image, messageId: data?.message_id ?? null, bytes: buffer.length, mimeType };
   }
 
