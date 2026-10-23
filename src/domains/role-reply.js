@@ -31,13 +31,19 @@ export function createRoleReplyModule(ctx) {
       const rs = readRoleState();
       if (!rs.role) return '';
       // 新结构：roles/<角色>/速记.core.md；旧结构 roles/<角色>.速记.md 仍兼容。
+      // 角色没写自己的速记 → **回退到默认角色（小鲸鱼）的流程规则**。
+      // 速记是流程与硬规则（带令牌、看图、收尾、分条），和人格无关；不注入的话
+      // 扮演角色连 qq_get_message_images 都不会调（2026-10-19：扮演期间发图她看不见）。
       const digestNew = path.join(ROOT, 'roles', rs.role, '速记.core.md');
-      const f = fs.existsSync(digestNew) ? digestNew : path.join(ROOT, 'roles', rs.role + '.速记.md');
-      if (!fs.existsSync(f)) return '';
+      const digestOld = path.join(ROOT, 'roles', rs.role + '.速记.md');
+      const fallback = path.join(ROOT, 'roles', '小鲸鱼', '速记.core.md');
+      const f = [digestNew, digestOld, fallback].find((p) => fs.existsSync(p));
+      if (!f) return '';
       const st = fs.statSync(f);
-      if (ctx.roleDigestCache.key === String(st.mtimeMs)) return ctx.roleDigestCache.text;
+      const cacheKey = `${rs.role}:${st.mtimeMs}`;
+      if (ctx.roleDigestCache.key === cacheKey) return ctx.roleDigestCache.text;
       const text = fs.readFileSync(f, 'utf8').trim();
-      ctx.roleDigestCache = { key: String(st.mtimeMs), text };
+      ctx.roleDigestCache = { key: cacheKey, text };
       return text;
     } catch {
       return '';

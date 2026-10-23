@@ -1,7 +1,7 @@
 // bridge.js 解剖：函数清单 / 体积分布 / 重复概念 / 状态与配置面
 import fs from 'node:fs';
 
-const SRC = '<项目目录>/qq-bridge-main/src/bridge.js';
+const SRC = '<项目根>/src/bridge.js';
 const src = fs.readFileSync(SRC, 'utf8');
 const lines = src.split('\n');
 console.log('bridge.js: ' + lines.length + ' 行 / ' + (src.length / 1024).toFixed(1) + ' KB\n');

@@ -27,7 +27,7 @@ const ARCHIVE_DIR = path.join(ROOT, 'docs', '会话归档');
 const TRANSCRIPT_DIR = path.join(ARCHIVE_DIR, 'transcripts');
 const HOMES = [
   path.join(process.env.USERPROFILE ?? '', '.dsh', 'sessions'),
-  '<项目目录>/dsh-home-legacy/sessions'
+  '<项目根>/dsh-home-legacy/sessions'
 ];
 const MAX_GAP_DAYS = 7;
 

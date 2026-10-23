@@ -108,7 +108,7 @@ test('parseEndpoint 认得好内容并归一化字段', () => {
 test('looksLikeDsh：白名单与命令行都要认', () => {
   assert.equal(looksLikeDsh({ name: 'DSH Desktop.exe' }), true);
   assert.equal(looksLikeDsh({ name: 'node.exe' }), true);
-  assert.equal(looksLikeDsh({ name: 'whatever.exe', commandLine: 'E:\\DS\\DSH Desktop\\DSH Desktop.exe --type=utility' }), true);
+  assert.equal(looksLikeDsh({ name: 'whatever.exe', commandLine: 'C:\\Apps\\DSH\\DSH Desktop.exe --type=utility' }), true);
   assert.equal(looksLikeDsh({ name: 'RuntimeBroker.exe', commandLine: 'C:\\Windows\\System32\\RuntimeBroker.exe -Embedding' }), false);
   assert.equal(looksLikeDsh(null), false);
 });

@@ -358,7 +358,9 @@ export async function handleSlang2(ctx) {
     cfg,
     confirmedSlangListV2,
     createSlangEntry,
+    deleteExpressionById,
     deps,
+    listExpressions,
     log,
     mergeEvidence,
     publicSlangEntry,
@@ -366,9 +368,11 @@ export async function handleSlang2(ctx) {
     readBody,
     redactKnownTokensOnly,
     req,
+    runExpressionExtraction,
     runSlangResearch,
     saveSlangStore,
     sendJson,
+    setExpressionStatus,
     url,
     v2SessionAllowed,
     v2ToolEnabled,
@@ -376,8 +380,52 @@ export async function handleSlang2(ctx) {
 
     if (routeSlangQuery()) return true;
     if (await routeSlangSubmit()) return true;
+    if (await routeExpressions()) return true;
 
   return false;
+
+  // ── 表达方式库（「场景 → 怎么说」）：手动触发学习 + 人工审核 ─────────────
+  async function routeExpressions() {
+    if (url.pathname === '/api/expressions' && req.method === 'GET') {
+      const status = String(url.searchParams.get('status') ?? '').trim();
+      const key = String(url.searchParams.get('key') ?? '').trim();
+      const entries = listExpressions({ status, sessionKey: key });
+      sendJson({ ok: true, count: entries.length, entries });
+      return true;
+    }
+    if (url.pathname === '/api/expressions/extract' && req.method === 'POST') {
+      const body = await readBody();
+      const key = String(body.key ?? '').trim();
+      if (!key) { sendJson({ ok: false, error: 'key 不能为空' }, 400); return true; }
+      if (cfg.slang?.enabled === false) { sendJson({ ok: false, error: '学习已关闭（slang.enabled=false）' }, 400); return true; }
+      // 一次手动提取 = 一次模型调用；走黑话的任务链串行执行，不抢学习者会话。
+      const result = await queueSlangTask(() => runExpressionExtraction(key));
+      sendJson(result ?? { ok: false, error: '提取没有返回结果' });
+      return true;
+    }
+    const m = url.pathname.match(/^\/api\/expressions\/([^/]+)(?:\/(confirm|reject))?$/);
+    if (m) {
+      const id = m[1];
+      if (req.method === 'POST' && m[2] === 'confirm') {
+        const entry = setExpressionStatus(id, 'confirmed');
+        if (!entry) { sendJson({ ok: false, error: '表达式不存在' }, 404); return true; }
+        sendJson({ ok: true, entry });
+        return true;
+      }
+      if (req.method === 'POST' && m[2] === 'reject') {
+        const entry = setExpressionStatus(id, 'rejected');
+        if (!entry) { sendJson({ ok: false, error: '表达式不存在' }, 404); return true; }
+        sendJson({ ok: true, entry });
+        return true;
+      }
+      if (req.method === 'DELETE' && !m[2]) {
+        if (!deleteExpressionById(id)) { sendJson({ ok: false, error: '表达式不存在' }, 404); return true; }
+        sendJson({ ok: true });
+        return true;
+      }
+    }
+    return false;
+  }
 
   async function routeSlangSubmit() {
     if (req.method === 'POST' && url.pathname === '/api/socialV2/slang/submit') {

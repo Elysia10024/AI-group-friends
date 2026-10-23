@@ -70,7 +70,14 @@ export function createModeModule(ctx) {
   function modePreset(key, mode, cfg) {
     if (mode === 'closed-agent') return ctx.closedAgentPreset || 'router-standard';
     // 二代仿真模式优先使用 socialV2.agentPreset；未配置时回退到默认聊天预设
-    if (mode === 'reserved2') return cfg.socialV2?.agentPreset || cfg.agentPreset || undefined;
+    if (mode === 'reserved2') {
+      // 角色扮演期间换一份不带小鲸鱼速记/关系的预设（2026-10-20：预设是常驻系统提示，
+      // 材料层换了角色卡也没用——速记里的说话方式会让角色说成小鲸鱼的口吻）。
+      if (typeof ctx.isRoleplaying === 'function' && ctx.isRoleplaying()) {
+        return cfg.socialV2?.roleplayPreset || 'qq-roleplay';
+      }
+      return cfg.socialV2?.agentPreset || cfg.agentPreset || undefined;
+    }
     return cfg.agentPreset || undefined;
   }
   function isSessionAllowedInCurrentMode(key) {

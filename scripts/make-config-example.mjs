@@ -3,8 +3,8 @@
 // Python 的 stdout 是 GBK，回传到 harness 会变成乱码。
 import fs from 'node:fs';
 
-const SRC = '<项目目录>/qq-bridge-main/config.json';
-const DST = '<项目目录>/qq-bridge-main/config.example.json';
+const SRC = '<项目根>/config.json';
+const DST = '<项目根>/config.example.json';
 const SECRET_RE = /token|secret|password|apikey|api_key|cookie/i;
 const PLACEHOLDER = '<在这里填你自己的值>';
 

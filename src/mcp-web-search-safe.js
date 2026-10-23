@@ -15,6 +15,9 @@ import dns from 'node:dns';
 import net from 'node:net';
 import http from 'node:http';
 import https from 'node:https';
+import os from 'node:os';
+import fs from 'node:fs';
+import path from 'node:path';
 import { StringDecoder } from 'node:string_decoder';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
@@ -112,6 +115,52 @@ async function bingSearch(query) {
   } catch { /* 预期回退：RSS 版挂了或无结果就退回下一行的 HTML 解析 */ }
   // RSS 挂了或无结果，退回老解析
   return bingSearchHtml(query);
+}
+
+// ---- DeepSeek 官方搜索（2026-10-21）----
+// 走 https://api.deepseek.com/v1/tools/search：官方自研搜索，返回摘要/权威度（比爬 Bing 稳）。
+// 官方说明：2026-11-01 00:00（北京时间）前免费，之后 $0.75/千次成功请求（失败/空结果不计费）。
+// 与旧的 bingSearch 并存：**优先用这个**，它失败再退回 web_search（一次只用一个）。
+function deepseekApiKey() {
+  const envKey = String(process.env.DEEPSEEK_API_KEY ?? '').trim();
+  if (envKey) return envKey;
+  try {
+    const cred = fs.readFileSync(path.join(os.homedir(), '.dsh', '.credentials.yaml'), 'utf8');
+    const m = /^\s*DEEPSEEK_API_KEY:\s*['"]?(sk-[A-Za-z0-9_-]+)/m.exec(cred);
+    if (m) return m[1];
+  } catch { /* 没凭据文件就返回空，工具会报错并让她退回 web_search */ }
+  return '';
+}
+
+async function deepseekSearch(query, count) {
+  const key = deepseekApiKey();
+  if (!key) throw new Error('没有 DeepSeek API key（环境变量 DEEPSEEK_API_KEY 或 ~/.dsh/.credentials.yaml 的 refs.DEEPSEEK_API_KEY）');
+  const res = await fetch('https://api.deepseek.com/v1/tools/search', {
+    method: 'POST',
+    headers: { authorization: `Bearer ${key}`, 'content-type': 'application/json' },
+    body: JSON.stringify({ query, count, need_content: false }),
+    signal: AbortSignal.timeout(25000),
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(`HTTP ${res.status}${text ? ': ' + text.slice(0, 200) : ''}`);
+  }
+  const data = await res.json();
+  const results = Array.isArray(data?.results) ? data.results : [];
+  return {
+    engine: 'deepseek',
+    query,
+    count: results.length,
+    results: results.map((r) => ({
+      title: r.title,
+      url: r.url,
+      snippet: r.snippet,
+      summary: r.summary,
+      authority: r.authority,
+      date: r.date,
+      site: r.site_name,
+    })),
+  };
 }
 
 // 解析 IPv6 中内嵌的 IPv4（::ffff:a.b.c.d、::ffff:7f00:1、::a.b.c.d 等）。
@@ -354,7 +403,7 @@ const server = new McpServer({ name: 'web-search-safe', version: '0.1.0' });
 
 server.tool(
   'web_search',
-  '只读搜索网络用语/梗/黑话的含义，返回 Bing 搜索结果（标题/URL/摘要）。仅用于理解词义，不执行任何本地操作。',
+  '（备用搜索）只读搜索网络用语/梗/黑话的含义，返回 Bing 结果（标题/URL/摘要）。**优先用 deepseek_search**；只有它报错/超时/没结果时才用这个。仅用于查词，不执行任何本地操作。',
   { query: z.string().describe('要搜索确认的网络用语/黑话/梗') },
   async ({ query }) => {
     const clean = sanitizeQuery(query);
@@ -367,6 +416,30 @@ server.tool(
     } catch (error) {
       return {
         content: [{ type: 'text', text: `搜索失败：${error?.message ?? error}` }],
+        isError: true,
+      };
+    }
+  }
+);
+
+server.tool(
+  'deepseek_search',
+  '联网搜索（DeepSeek 官方搜索）：返回网页标题/URL/摘要/权威度，比 web_search 更准更稳。**优先用这个**；它失败或没结果时，再退回 web_search（一次只用一个，别两个都调）。',
+  {
+    query: z.string().describe('搜索词（1-128 字）'),
+    count: z.number().int().min(1).max(10).optional().describe('返回几条，默认 5'),
+  },
+  async ({ query, count }) => {
+    const clean = sanitizeQuery(query);
+    if (!clean) {
+      return { content: [{ type: 'text', text: '查询词为空，已拒绝。' }], isError: true };
+    }
+    try {
+      const result = await deepseekSearch(clean, count ?? 5);
+      return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+    } catch (error) {
+      return {
+        content: [{ type: 'text', text: `官方搜索失败：${error?.message ?? error}（可以改用 web_search 再试）` }],
         isError: true,
       };
     }

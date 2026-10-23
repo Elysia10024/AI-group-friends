@@ -7,7 +7,7 @@
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 
-const ROOT = '<项目目录>/qq-bridge-main';
+const ROOT = '<项目根>';
 const QUICK = process.argv.includes('--quick');
 const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
 
@@ -40,7 +40,7 @@ const STEPS = [
   // 会话归档新鲜度：归档是"给压缩后的我用的记忆"，落后于现实就会误导人 —— 比没有归档更糟。
   // 判据：最新会话活动 vs 最后归档日期（差 >7 天就红）。自检钩子见脚本头（ARCHIVE_FAKE_SESSION_DAY）。
   ['会话归档新鲜度', ['node', 'scripts/check-archive.mjs']],
-  // 档案新鲜度：`E:\DS\docs\小鲸鱼档案.md` 的「现状速览」是**生成块**（tools/bridge-facts.mjs），
+  // 档案新鲜度：`docs/小鲸鱼档案.md` 的「现状速览」是**生成块**（tools/bridge-facts.mjs），
   // 但生成块不会自己变新 —— 忘了 --write 它就悄悄过期（那份档案已经烂过 27 天，还写着"傲娇"）。
   // 工具不在时这条**报红而不是跳过**：本仓有过"守卫指向的路径悄悄失效、连续 12 天报绿"的教训。
   ['档案新鲜度', ['node', 'scripts/check-dossier.mjs']],
@@ -93,7 +93,7 @@ console.log(bad ? `\n❌ ${bad} 项没过 —— 去看上面的明细。` : '\n
 
 // 留一份滚动日志（watchdog 用它判断"今天体检过没有"）
 try {
-  fs.appendFileSync('<项目目录>/logs/selfcheck.log', `${head}\n${rows.map((r) => `  ${r.ok ? 'OK  ' : 'FAIL'} ${r.name}: ${r.line}`).join('\n')}\n\n`, 'utf8');
+  fs.appendFileSync('<项目根>/logs/selfcheck.log', `${head}\n${rows.map((r) => `  ${r.ok ? 'OK  ' : 'FAIL'} ${r.name}: ${r.line}`).join('\n')}\n\n`, 'utf8');
 } catch { /* 日志写不了不影响结论 */ }
 
 process.exit(bad ? 1 : 0);

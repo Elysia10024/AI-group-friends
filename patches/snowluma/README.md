@@ -55,13 +55,13 @@ node patches/snowluma/check.mjs
 ## 升级 SnowLuma 后的重打流程
 
 1. `node patches/snowluma/check.mjs` —— 确认补丁确实丢了
-2. **先备份**：`Copy-Item <你的项目目录>\SnowLuma\index.mjs <你的项目目录>\SnowLuma\index.mjs.bak-<日期>`
+2. **先备份**：`Copy-Item <项目根>\SnowLuma\index.mjs <项目根>\SnowLuma\index.mjs.bak-<日期>`
 3. 按顺序打（**顺序不能反**，`redbag-decode.py` 依赖 `rawhex-capture.mjs` 的 `rawHex`）：
    ```bash
    node patches/snowluma/rawhex-capture.mjs
    python patches/snowluma/redbag-decode.py
    ```
-4. `node --check <你的项目目录>\SnowLuma\index.mjs` —— 语法必须过
+4. `node --check <项目根>\SnowLuma\index.mjs` —— 语法必须过
 5. 重启 SnowLuma（见下）
 6. `node patches/snowluma/check.mjs` —— 应全绿
 7. 更新 `check.mjs` 里的 `PATCHED_VERSION`
@@ -70,7 +70,7 @@ node patches/snowluma/check.mjs
 
 ## 重启 SnowLuma
 
-SnowLuma 以 `"<你的项目目录>\SnowLuma\node.exe" ./index.mjs` 运行（工作目录 `<你的项目目录>\SnowLuma`）。
+SnowLuma 以 `"<项目根>\SnowLuma\node.exe" ./index.mjs` 运行（工作目录 `<项目根>\SnowLuma`）。
 重启方式与注意事项见 `docs/重构方案.md`（要等它把日志写完再停，避免写坏状态）。
 
 ## 为什么不干脆改上游

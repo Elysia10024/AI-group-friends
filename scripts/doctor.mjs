@@ -21,7 +21,7 @@ import { snowlumaStatus, DEFAULT_SNOWLUMA_DIR, PATCHED_VERSION } from '../patche
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, '..');            // qq-bridge-main
-const REPO = path.resolve(ROOT, '..');            // <项目目录>
+const REPO = path.resolve(ROOT, '..');            // <项目根>
 
 const BRIDGE_SRC = path.join(ROOT, 'src', 'bridge.js');
 const SRC_DIR = path.join(ROOT, 'src');

@@ -1,7 +1,7 @@
 import io, os, re, shutil, sys, time, subprocess
 
-SRC = r'<你的项目目录>\SnowLuma\index.mjs'
-BAK = r'<你的项目目录>\backup-snowluma-redbag-' + time.strftime('%Y%m%d-%H%M%S')
+SRC = r'<项目根>\SnowLuma\index.mjs'
+BAK = r'<项目根>\backup-snowluma-redbag-' + time.strftime('%Y%m%d-%H%M%S')
 
 src = open(SRC, encoding='utf-8').read()
 orig_len = len(src)

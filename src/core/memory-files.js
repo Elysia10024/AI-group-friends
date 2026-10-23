@@ -12,11 +12,14 @@
 //   · 字段表和上限只有一份（MEMORY_FIELDS），addMemory 与读盘共用。
 import path from 'node:path';
 
-/** 记忆字段（落在会话记忆文件里的三样）。上限与 social-state 的字段表保持一致。 */
+/** 记忆字段（落在会话记忆文件里的）。上限与 social-state 的字段表保持一致。 */
 export const MEMORY_FIELDS = [
   ['activeTopics', { cap: 20 }],
   ['pendingThoughts', { cap: 20 }],
-  ['memberImpressions', { obj: true }]
+  ['memberImpressions', { obj: true }],
+  // 格式版本（1 = key 是名字，2 = key 是 QQ 号）。它必须在这张表里，否则 pickMemory/applyMemory
+  // 会把它丢掉 —— 迁移脚本就再也分不清"这个文件迁过没有"。缺失当 0 = 还没迁移。
+  ['memoryVersion', { default: 0 }]
 ];
 
 /** 会话 key → 记忆文件名：group:20000001 → group-20000001.json（只接受规范 key）。 */
@@ -44,14 +47,14 @@ export function pickMemory(st) {
   return out;
 }
 
-/** 把读到的记忆字段塞回会话状态（缺失的给空值，保证形状稳定）。 */
+/** 把读到的记忆字段塞回会话状态（缺失的给空值/字段自带的默认值，保证形状稳定）。 */
 export function applyMemory(st, data) {
   if (!st) return st;
   for (const [field, spec] of MEMORY_FIELDS) {
     const v = data?.[field];
     if (spec?.cap) st[field] = Array.isArray(v) ? v.slice(-spec.cap) : [];
     else if (spec?.obj) st[field] = v && typeof v === 'object' ? v : {};
-    else st[field] = v;
+    else st[field] = v === undefined || v === null ? (spec?.default ?? v) : v;
   }
   return st;
 }

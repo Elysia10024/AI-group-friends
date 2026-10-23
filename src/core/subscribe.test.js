@@ -4,9 +4,9 @@ import assert from 'node:assert/strict';
 import { parseSubscribeArg, looksLikeQq, addSpeakerId, removeSpeakerId, SPEAKER_IDS_CAP } from './subscribe.js';
 
 test('parseSubscribeArg：第一个纯数字 token 当群号，其余是目标', () => {
-  assert.deepEqual(parseSubscribeArg('20000001 群友辛'), { groupId: '20000001', target: '群友辛' });
+  assert.deepEqual(parseSubscribeArg('20000001 讨厌偏头痛'), { groupId: '20000001', target: '讨厌偏头痛' });
   assert.deepEqual(parseSubscribeArg('  20000001   2815316979  '), { groupId: '20000001', target: '2815316979' });
-  assert.deepEqual(parseSubscribeArg('群友辛'), { groupId: '', target: '群友辛' });
+  assert.deepEqual(parseSubscribeArg('讨厌偏头痛'), { groupId: '', target: '讨厌偏头痛' });
   assert.deepEqual(parseSubscribeArg(''), { groupId: '', target: '' });
   assert.deepEqual(parseSubscribeArg(null), { groupId: '', target: '' });
   // 太短的数字不当群号（避免把 QQ 号误判成群）
@@ -17,7 +17,7 @@ test('looksLikeQq：5~12 位纯数字才算', () => {
   assert.equal(looksLikeQq('2815316979'), true);
   assert.equal(looksLikeQq('12345'), true);
   assert.equal(looksLikeQq('1234'), false);
-  assert.equal(looksLikeQq('群友辛'), false);
+  assert.equal(looksLikeQq('讨厌偏头痛'), false);
   assert.equal(looksLikeQq(''), false);
 });
 

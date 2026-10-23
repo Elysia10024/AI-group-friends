@@ -18,7 +18,7 @@ function ctxOf(over = {}) {
     lastFetchedSeq: 100,
     pendingMentions: [],
     unread: [],
-    recentMessages: [msg(101, '群友甲', '你好'), msg(102, '我', '在', { isSelf: true })],
+    recentMessages: [msg(101, '群三水', '你好'), msg(102, '我', '在', { isSelf: true })],
     lastAiReplyAt: NOW - 5 * 60000,
     wakeConfig: { mode: 'diving', infinite: true, triggers: { atMention: true } },
     ...(over.st ?? {})
@@ -41,16 +41,23 @@ function ctxOf(over = {}) {
 }
 
 // ---------- 结构：段落顺序 ----------
-test('段落表顺序固定且齐全（12 段，now 必须在最后）', () => {
+test('段落表顺序固定且齐全（13 段，now 必须在最后）', () => {
   assert.deepEqual(SECTIONS.map((s) => s.id), [
     'mention', 'role', 'selfName', 'token', 'context',
-    'sticker', 'qzone', 'status', 'wake', 'memory', 'participation', 'now'
+    'sticker', 'qzone', 'bili', 'status', 'wake', 'memory', 'participation', 'now'
   ]);
+});
+
+test('B 站订阅行：桥侧传了才出现，没订阅不占 token', () => {
+  const on = buildWakePrompt(ctxOf({ biliText: '【B站订阅】关注了：原神。\n\n' }));
+  assert.ok(on.includes('【B站订阅】关注了：原神'));
+  const off = buildWakePrompt(ctxOf({}));
+  assert.ok(!off.includes('【B站订阅】'));
 });
 
 test('输出里各段的出现顺序与段落表一致', () => {
   const out = buildWakePrompt(ctxOf({
-    st: { pendingMentions: [{ seq: 105, at: NOW - 60000, kind: 'atMention', sender: 'UserB', text: '@大隐鲸 在吗' }], unread: [msg(105, 'UserB', '@大隐鲸 在吗')] },
+    st: { pendingMentions: [{ seq: 105, at: NOW - 60000, kind: 'atMention', sender: 'Dmnu', text: '@大隐鲸 在吗' }], unread: [msg(105, 'Dmnu', '@大隐鲸 在吗')] },
     memoryText: 'MEMORY-MARKER',
     participationText: 'PARTICIPATION-MARKER'
   }));
@@ -148,7 +155,7 @@ test('未读提醒：列出原文，只取最后 3 条', () => {
 });
 
 test('未读提醒：超过 2 小时的过期提醒不出现在顶部', () => {
-  const out = buildWakePrompt(ctxOf({ st: { pendingMentions: [{ seq: 105, at: NOW - 3 * 3600000, kind: 'poke', sender: 'UserB', text: '戳了戳 你' }], lastFetchedSeq: 100 } }));
+  const out = buildWakePrompt(ctxOf({ st: { pendingMentions: [{ seq: 105, at: NOW - 3 * 3600000, kind: 'poke', sender: 'Dmnu', text: '戳了戳 你' }], lastFetchedSeq: 100 } }));
   assert.ok(!out.includes('【⚠️ 有人在找你'));
 });
 
@@ -158,7 +165,7 @@ test('未读提醒：seq 不超过 lastFetchedSeq 的不算（她已看过）', 
 });
 
 test('poke 的措辞与 @/名字 不同；没证据说是拍你就不许写"拍了一拍你"', () => {
-  // 真实事故（2026-09-29）：UserA 戳的是丰川祥子，材料却写"UserA 拍了一拍你"，
+  // 真实事故（2026-09-29）：AF 戳的是丰川祥子，材料却写"AF 拍了一拍你"，
   // 她醒来以为在拍她，回手给了管理员一个拍一拍。所以这里正反两面都要钉住。
   const pokeSelf = sectionText(ctxOf({ st: { pendingMentions: [{ seq: 105, at: NOW - 1000, kind: 'poke', sender: 'A', pokeTargetIsSelf: true, text: 'x' }] } }), 'mention');
   assert.match(pokeSelf, /拍了一拍你/);
@@ -173,8 +180,8 @@ test('poke 的措辞与 @/名字 不同；没证据说是拍你就不许写"拍�
 
 // ---------- 群聊内联 ----------
 test('群聊内联：标出管理员与自己', () => {
-  const out = buildWakePrompt(ctxOf({ st: { recentMessages: [msg(101, '群友甲', '我说了算', { isOwner: true }), msg(102, '我', '嗯', { isSelf: true })] } }));
-  assert.ok(out.includes('[群友甲·管理员] 我说了算'));
+  const out = buildWakePrompt(ctxOf({ st: { recentMessages: [msg(101, '群三水', '我说了算', { isOwner: true }), msg(102, '我', '嗯', { isSelf: true })] } }));
+  assert.ok(out.includes('[群三水·管理员] 我说了算'));
   assert.ok(out.includes('[我] 嗯'));
 });
 

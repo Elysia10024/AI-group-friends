@@ -15,7 +15,7 @@ import { fileURLToPath } from 'node:url';
 /** 打补丁时记录的 SnowLuma 版本；升级后如果版本变了会额外告警。 */
 export const PATCHED_VERSION = '1.14.17';
 
-export const DEFAULT_SNOWLUMA_DIR = '<你的项目目录>/SnowLuma';
+export const DEFAULT_SNOWLUMA_DIR = '<项目根>/SnowLuma';
 
 /** 每个补丁至少要出现的标志串 —— 少一个就说明补丁被覆盖了。 */
 export const CHECKS = [

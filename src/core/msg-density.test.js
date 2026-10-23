@@ -18,7 +18,9 @@ const stamps = (n, gapMs = 1000) => Array.from({ length: n }, (_, i) => NOW - (n
 const base = (over = {}) => ({
   stamps: stamps(25),
   now: NOW,
-  cfg: { ...DENSITY_DEFAULTS },
+  // 显式打开：这些用例测的是"开着时的判定逻辑"，不该依赖默认值。
+  // （2026-10-16 默认值改成 false —— 主人要求她只在被叫到时才说话。）
+  cfg: { ...DENSITY_DEFAULTS, enabled: true },
   lastTriggerAt: 0,
   triggeredToday: 0,
   hour: 20,
@@ -72,9 +74,9 @@ test('quiet-hours：不在允许时段（含跨午夜时段）', () => {
   assert.equal(densityDecision(base({ hour: 3 })).reason, 'quiet-hours');
   assert.equal(densityDecision(base({ hour: 9 })).reason, 'ok', '起点含头');
   assert.equal(densityDecision(base({ hour: 23 })).reason, 'ok');
-  assert.equal(densityDecision(base({ hour: 23, cfg: { ...DENSITY_DEFAULTS, activeHourStart: 9, activeHourEnd: 24 } })).reason, 'ok');
+  assert.equal(densityDecision(base({ hour: 23, cfg: { ...DENSITY_DEFAULTS, enabled: true, activeHourStart: 9, activeHourEnd: 24 } })).reason, 'ok');
   // 跨午夜 9→2：晚上 9 点到凌晨 2 点都算允许
-  const cross = { ...DENSITY_DEFAULTS, activeHourStart: 9, activeHourEnd: 2 };
+  const cross = { ...DENSITY_DEFAULTS, enabled: true, activeHourStart: 9, activeHourEnd: 2 };
   assert.equal(densityDecision(base({ hour: 23, cfg: cross })).reason, 'ok');
   assert.equal(densityDecision(base({ hour: 1, cfg: cross })).reason, 'ok');
   assert.equal(densityDecision(base({ hour: 2, cfg: cross })).reason, 'quiet-hours', '终点不含尾');
@@ -95,7 +97,7 @@ test('cooldown：冷却中不触发，冷却刚好到期就放行', () => {
 test('daily-cap：当天用满就不再给机会', () => {
   assert.equal(densityDecision(base({ triggeredToday: DENSITY_DEFAULTS.dailyCap })).reason, 'daily-cap');
   assert.equal(densityDecision(base({ triggeredToday: DENSITY_DEFAULTS.dailyCap - 1 })).reason, 'ok', '还剩最后一次');
-  assert.equal(densityDecision(base({ triggeredToday: 0, cfg: { ...DENSITY_DEFAULTS, dailyCap: 0 } })).reason, 'daily-cap', 'cap 填 0 = 关掉');
+  assert.equal(densityDecision(base({ triggeredToday: 0, cfg: { ...DENSITY_DEFAULTS, enabled: true, dailyCap: 0 } })).reason, 'daily-cap', 'cap 填 0 = 关掉');
 });
 
 test('dice：达标也要掷中才叫她（0.5 时 0.49 中、0.5 不中）', () => {
@@ -103,8 +105,8 @@ test('dice：达标也要掷中才叫她（0.5 时 0.49 中、0.5 不中）', ()
   assert.equal(densityDecision(base({ random: 0.5 })).reason, 'dice');
   assert.equal(densityDecision(base({ random: 0.99 })).reason, 'dice');
   // probability=1 必中、=0 必不中（主人把骰子关掉时语义要干净）
-  assert.equal(densityDecision(base({ random: 0.99, cfg: { ...DENSITY_DEFAULTS, probability: 1 } })).reason, 'ok');
-  assert.equal(densityDecision(base({ random: 0.0001, cfg: { ...DENSITY_DEFAULTS, probability: 0 } })).reason, 'dice');
+  assert.equal(densityDecision(base({ random: 0.99, cfg: { ...DENSITY_DEFAULTS, enabled: true, probability: 1 } })).reason, 'ok');
+  assert.equal(densityDecision(base({ random: 0.0001, cfg: { ...DENSITY_DEFAULTS, enabled: true, probability: 0 } })).reason, 'dice');
 });
 
 test('disabled：关掉就是关掉，谁来都不叫（reason 也不许变成别的）', () => {
@@ -129,10 +131,12 @@ test('判定顺序：disabled → quiet-hours → too-few → cooldown → daily
 });
 
 test('缺 cfg / 坏 cfg 都按默认值走，不炸', () => {
-  assert.equal(densityDecision({ stamps: stamps(25), now: NOW, hour: 12, random: 0 }).reason, 'ok');
-  assert.equal(densityDecision({ stamps: stamps(25), now: NOW, hour: 12, random: 0, cfg: null }).reason, 'ok');
-  assert.equal(densityDecision({ stamps: stamps(25), now: NOW, hour: 12, random: 0, cfg: 'nonsense' }).reason, 'ok');
-  assert.equal(densityDecision({}).reason, 'quiet-hours', '全空也要给一个明确的 reason');
+  // 默认值现在是 false（2026-10-16 关掉 densityWake），所以"按默认值走"的结果就是 disabled。
+  // 这条测的是"不炸"：缺字段、坏值都不能抛错，而且都必须给出一个明确的 reason。
+  assert.equal(densityDecision({ stamps: stamps(25), now: NOW, hour: 12, random: 0 }).reason, 'disabled');
+  assert.equal(densityDecision({ stamps: stamps(25), now: NOW, hour: 12, random: 0, cfg: null }).reason, 'disabled');
+  assert.equal(densityDecision({ stamps: stamps(25), now: NOW, hour: 12, random: 0, cfg: 'nonsense' }).reason, 'disabled');
+  assert.equal(densityDecision({}).reason, 'disabled', '全空也要给一个明确的 reason');
 });
 
 test('默认值：阈值/上限/时段就是规格里那几个数', () => {

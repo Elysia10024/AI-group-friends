@@ -4,13 +4,13 @@ import assert from 'node:assert/strict';
 import { recallAcrossConversations, convLabel, parseSinceMs } from './memory-recall.js';
 
 const CONVS = [
-  { key: 'group:20000001', memory: { activeTopics: [{ text: '三水让我接发图功能那摊' }], memberImpressions: { 群友甲: { traits: ['关系：家人', '他爱拿我的配置当谈资'] } } } },
-  { key: 'group:20000002', memory: { activeTopics: [{ text: '杨森说下周一起打游戏' }] } },
+  { key: 'group:20000001', memory: { activeTopics: [{ text: '三水让我接发图功能那摊' }], memberImpressions: { 群三水: { traits: ['关系：家人', '他爱拿我的配置当谈资'] } } } },
+  { key: 'group:20000004', memory: { activeTopics: [{ text: '杨森说下周一起打游戏' }] } },
   { key: 'private:10000001', memory: { activeTopics: [{ text: '他说家里那事别追问' }] } }
 ];
 
 test('在 B 群问 A 群的事：能查到，并标明是哪个群', () => {
-  const lines = recallAcrossConversations({ conversations: CONVS, requesterKey: 'group:20000002', query: '发图' });
+  const lines = recallAcrossConversations({ conversations: CONVS, requesterKey: 'group:20000004', query: '发图' });
   assert.equal(lines.length, 1);
   assert.match(lines[0], /群 20000001/);
   assert.match(lines[0], /发图功能/);
@@ -26,7 +26,7 @@ test('私聊隔离：群里查不到私聊内容；私聊自己能查到', () =>
   assert.deepEqual(inGroup, [], '群里不该看到私聊');
   const inPrivate = recallAcrossConversations({ conversations: CONVS, requesterKey: 'private:10000001', query: '家里' });
   assert.equal(inPrivate.length, 0, '自己问自己那条也在"本会话"里、不重复列');
-  const otherPrivate = recallAcrossConversations({ conversations: CONVS, requesterKey: 'private:10000004', query: '家里那事' });
+  const otherPrivate = recallAcrossConversations({ conversations: CONVS, requesterKey: 'private:10000002', query: '家里那事' });
   assert.deepEqual(otherPrivate, [], '别人的私聊查不到');
 });
 
@@ -67,7 +67,7 @@ test('recallAcrossConversations：带绝对时间、能按人筛、能按时间�
     key: 'group:1',
     memory: {
       memberImpressions: {
-        UserQ: { traits: ['他骂过我', '爱说脏话'], traitMeta: [{ firstAt: t0, lastAt: t0, hits: 1 }, { firstAt: t0, lastAt: t1, hits: 3 }] }
+        Qruei: { traits: ['他骂过我', '爱说脏话'], traitMeta: [{ firstAt: t0, lastAt: t0, hits: 1 }, { firstAt: t0, lastAt: t1, hits: 3 }] }
       }
     }
   }];
@@ -75,8 +75,8 @@ test('recallAcrossConversations：带绝对时间、能按人筛、能按时间�
   assert.equal(all.length, 2);
   assert.match(all[0], /\[10-11\]/, '最近提过的排前面，并带绝对时间');
   assert.match(all[1], /\[10-5\]/);
-  assert.match(all[0], /对UserQ的/, '标明是对谁的印象');
-  assert.equal(recallAcrossConversations({ conversations: convs, requesterKey: 'group:2', person: 'UserQ' }).length, 2);
+  assert.match(all[0], /对Qruei的/, '标明是对谁的印象');
+  assert.equal(recallAcrossConversations({ conversations: convs, requesterKey: 'group:2', person: 'Qruei' }).length, 2);
   assert.equal(recallAcrossConversations({ conversations: convs, requesterKey: 'group:2', person: '别人' }).length, 0);
   const recent = recallAcrossConversations({ conversations: convs, requesterKey: 'group:2', sinceMs: new Date(2026, 9, 10).getTime() });
   assert.equal(recent.length, 1, '只有 10-11 那条落在窗口里');

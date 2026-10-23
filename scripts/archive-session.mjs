@@ -30,7 +30,7 @@ const ROOT = path.resolve(import.meta.dirname, '..');
 const OUT_DIR = path.join(ROOT, 'docs', '会话归档', 'transcripts');
 const HOMES = {
   desktop: path.join(process.env.USERPROFILE ?? '', '.dsh', 'sessions'),
-  legacy: '<项目目录>/dsh-home-legacy/sessions'
+  legacy: '<项目根>/dsh-home-legacy/sessions'
 };
 
 const argvVal = (name) => { const i = process.argv.indexOf(`--${name}`); return i >= 0 ? process.argv[i + 1] : null; };

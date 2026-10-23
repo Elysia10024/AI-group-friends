@@ -79,10 +79,10 @@ test('唤醒提示里的评论通知：列出来 + 楼中楼数量 + 超量截�
 });
 
 test('回复时补 @：网关只能发顶层评论，指向谁靠正文里的 @', () => {
-  assert.equal(withCommentMention('UserB', '想得美'), '@UserB 想得美');
-  assert.equal(withCommentMention('UserB', '@UserB 想得美'), '@UserB 想得美', '她已经写了 @ 就别重复加');
+  assert.equal(withCommentMention('Dmnu', '想得美'), '@Dmnu 想得美');
+  assert.equal(withCommentMention('Dmnu', '@Dmnu 想得美'), '@Dmnu 想得美', '她已经写了 @ 就别重复加');
   assert.equal(withCommentMention('', '想得美'), '想得美');
-  assert.equal(withCommentMention('UserB', ''), '');
+  assert.equal(withCommentMention('Dmnu', ''), '');
   assert.equal(withCommentMention(null, '想得美'), '想得美');
   // 名字太长（多半不是人名）不动它
   assert.equal(withCommentMention('这个名字长到不像人名的一串字', '好'), '@这个名字长到不像人名的一串字 好');

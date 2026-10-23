@@ -1,19 +1,20 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-"""把 E:\\ai群友\\image 下的图规范化成能被 QQ 发送 / 能被模型预览的 JPEG。
+"""把 image 目录下的图规范化成能被 QQ 发送 / 能被模型预览的 JPEG。
 
 为什么要它：用户手工把图片重命名成 .jpg，但其中 48 张其实是 **AVIF**、2 张 WebP、2 张 PNG。
 QQ 客户端对 AVIF 支持极差（发出去可能显示不出来），而她自己的看图工具也读不了 AVIF
 （实测报 "Unsupported or malformed image data"）—— 那就没法"挑图"。
 
-输出：E:\\ai群友\\image\\ready\\<原名>.jpg（长边 ≤1080、JPEG q85）——**不改原图**。
-幂等：输出比输入新就跳过。用法：python normalize-images.py
+输出：<SRC>/ready/<原名>.jpg（长边 ≤1080、JPEG q85）——**不改原图**。
+幂等：输出比输入新就跳过。用法：在项目根跑 `python assets/image-library/normalize-images.py`，
+或用环境变量 IMAGE_LIBRARY_SRC 指定图库目录。
 """
 import os
 import sys
 from PIL import Image, features
 
-SRC = r'E:\ai群友\image'
+SRC = os.environ.get('IMAGE_LIBRARY_SRC', 'image')
 DST = os.path.join(SRC, 'ready')
 MAX_EDGE = 1080
 QUALITY = 85

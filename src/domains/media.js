@@ -110,7 +110,7 @@ export function createMediaModule(ctx) {
     return null;
   }
 
-  const MAX_MEDIA_COUNT = 5; // 单条消息最多内联/返回的图片/表情数
+  const MAX_MEDIA_COUNT = 10; // 单条消息最多内联/返回的图片/表情数（2026-10-19 主人要求 5→10）
   /**
    * 直接喂给视觉模型的单张上限。2026-10-12 从 4MB 放宽到 8MB ——
    * 起因：主人在群里发的那张图 7.5MB，她一直看不到（日志里是"超过大小限制（4194304 字节）"）。

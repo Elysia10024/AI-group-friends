@@ -101,7 +101,7 @@ export function createSocialLogModule(ctx) {
     const unreadLimit = Number(cfg.socialV2?.context?.unreadLimit) || 30;
     const actor = String(sender || userId || '未知');
     // 被拍的是别人时**写名字而不是 QQ 号**（名字解析失败才退回 QQ）：
-    // 观测到的观感问题——日志里出现过「三水 戳了戳 3951361727」，她看不出那串数字是谁。
+    // 观测到的观感问题——日志里出现过「三水 戳了戳 10000003」，她看不出那串数字是谁。
     const target = targetIsSelf ? '你' : (String(targetName || '') || String(targetId || '未知'));
     const actionText = action ? String(action) : '拍了拍';
     const suffixText = suffix ? ` ${String(suffix)}` : '';

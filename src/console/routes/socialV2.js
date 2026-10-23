@@ -178,7 +178,7 @@ export async function handleSocialV21(ctx) {
         recentCount: st.recentMessages.length,
         currentWakeConfig: st.wakeConfig,
         wakeSafety: computeWakeSafetyV2(st.wakeConfig),
-        memory: formatMemoryV2(st),
+        memory: formatMemoryV2(st, key),
         participation: formatParticipationV2(st),
         slang: {
           enabled: cfg.slang?.enabled !== false,

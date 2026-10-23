@@ -18,6 +18,7 @@ import { createAdminCommandsModule } from './admin-commands.js';
 import { isChatMuted } from '../core/mute.js';
 import { isCommandAddressed } from '../core/commands.js';
 import { isIgnoredUser } from '../core/ignore-users.js';
+import { isTakeoverOn, startTakeover, stopTakeover, appendOwnerMessage } from '../core/takeover.js';
 
 export function createIncomingModule(ctx) {
   const {
@@ -113,6 +114,29 @@ export function createIncomingModule(ctx) {
   // QQ 消息 → DSH prompt
   async function handleIncoming(kind, id, event, cfg) {
     const key = convKey(kind, id);
+    // ── 接管模式（2026-10-22 主人后门）：主人私聊的暗号和消息不进她的会话 ──
+    // 「妈妈接管」= 打开接管（之后主人私聊消息交给 mom-bot → headless 的我处理）；
+    // 「妈妈下线」= 关闭接管。群和其他人的私聊完全不受影响。
+    if (kind === 'private' && String(event.user_id ?? '') === String(cfg.ownerQQ ?? '')) {
+      const takeoverText = await segmentsToText(event.message ?? [], { includeReply: false, selfId: event.self_id });
+      if (isTakeoverOn(ROOT)) {
+        if (takeoverText.includes('妈妈下线')) {
+          stopTakeover(ROOT);
+          log('接管模式：关闭（妈妈下线）');
+          await sendToQQ(key, '我下线了，让鲸鱼陪你吧。');
+          return;
+        }
+        appendOwnerMessage(takeoverText, ROOT);
+        log(`接管模式：主人消息存起来了（不投递给她）：${takeoverText.slice(0, 40)}`);
+        return;
+      }
+      if (takeoverText.includes('妈妈接管')) {
+        startTakeover(ROOT);
+        log('接管模式：开启（妈妈接管）');
+        await sendToQQ(key, '妈妈接管了。直接说，我在。');
+        return;
+      }
+    }
     // 「不理某人」名单（socialV2.ignoreUsers，2026-10-12 主人要求：把骂过她的那个人拉黑）：
     // 名单里的 QQ 号在群里说什么都**不读、不记账、不唤醒**。位置与下面几条闸门同级 ——
     // 必须在任何解析/记录之前，否则"不读"就是空话。判定见 src/core/ignore-users.js（带单测）。
@@ -218,7 +242,8 @@ export function createIncomingModule(ctx) {
 
     // 黑话学习素材：只从群聊普通消息进入滚动窗口（命令/角色控制语不学；只学当前消息自己的文字，不学引用原文）
     if (kind === 'group') {
-      feedSlangWindow(key, senderLabel(event.sender, event.user_id), plainContent);
+      const selfId = String(event.self_id ?? '');
+      feedSlangWindow(key, senderLabel(event.sender, event.user_id), plainContent, Boolean(selfId) && String(event.user_id) === selfId);
     }
 
     const promptText = buildIncomingPrompt(event, isOwner, key, kind, mediaList, messageRef, textContent);
@@ -475,8 +500,10 @@ export function createIncomingModule(ctx) {
   }
 
   async function rejectRoleControlByNonOwner(isOwner, key, plainContent) {
-    // 控制类话语：仅管理员（ownerQQ）可下达；群友触发直接拦截
-    if (!isOwner && /进入角色扮演|退出角色扮演|切换角色|设置角色|改角色|换角色|关闭角色扮演|开启角色扮演/.test(plainContent)) {
+    // 控制类话语：仅管理员（ownerQQ）可下达；群友触发直接拦截。
+    // 2026-10-19：补上「角色扮演：X」这个写法（主人在私聊里用的就是它），
+    // 否则非 owner 说这句会直接进模型、被当成普通聊天。
+    if (!isOwner && /(进入|开始|退出|关闭|开启|切换)角色扮演|角色扮演\s*[:：]|切换角色|设置角色|改角色|换角色/.test(plainContent)) {
       await sendToQQ(key, '角色切换仅管理员可在管理端操作，群内不支持。');
       return true;
     }

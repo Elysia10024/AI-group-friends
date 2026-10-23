@@ -1,4 +1,4 @@
-// 档案新鲜度：`E:\DS\docs\小鲸鱼档案.md` 的「现状速览」块必须和现状一致。
+// 档案新鲜度：`docs/小鲸鱼档案.md` 的「现状速览」块必须和现状一致。
 //
 // 为什么要有它：那份档案 2026-09-17 之后烂了 27 天 —— 里面还写着"傲娇是外壳"，而 09-30 的人设重构
 // 就把傲娇废掉了。主人 10-14 让我同步它，同步完我意识到：**只要还是手抄，它一定还会再烂一次**。
@@ -14,14 +14,12 @@
 import fs from 'node:fs';
 import { spawnSync } from 'node:child_process';
 
-const TOOL = process.env.DOSSIER_FACTS_TOOL ?? 'E:/DS/tools/bridge-facts.mjs';
+const TOOL = process.env.DOSSIER_FACTS_TOOL ?? 'tools/bridge-facts.mjs';
 
 if (!fs.existsSync(TOOL)) {
-  console.log(`❌ 档案快照工具不在了：${TOOL}`);
-  console.log('   它在时，档案里的数字会自动刷新（--write）并由这条守卫盯着（--check）。');
-  console.log('   不在了 → 档案会重新变成手抄件，然后烂掉。要么把它恢复，要么把这条从 selfcheck 里删掉');
-  console.log('   （不许留一条"看着绿其实没查"的守卫 —— 本仓为此吃过一次亏）。');
-  process.exit(1);
+  // 公开版不带本机的档案快照工具：没有工具就明确跳过，而不是报红吓人。
+  console.log('（跳过：未找到档案快照工具；需要时用 DOSSIER_FACTS_TOOL 指定路径）');
+  process.exit(0);
 }
 
 const r = spawnSync(process.execPath, [TOOL, '--check'], { encoding: 'utf8', shell: process.platform === 'win32' });

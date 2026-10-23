@@ -13,7 +13,7 @@ export const BILI_SCROLL_DEFAULTS = {
   maxWakePerDay: 6,
   maxDurationSec: 300,
   withFrames: true,
-  groupKey: ''
+  groupKey: 'group:20000001'
 };
 
 const PREFERRED_TNAMES = ['游戏', '单机游戏', '手机游戏', '网络游戏', '鬼畜', '搞笑', '动画', '影视剪辑'];

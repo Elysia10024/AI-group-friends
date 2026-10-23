@@ -1,7 +1,7 @@
 // 目标模块划分：把 bridge.js 现有 191 个函数按职责归类，得出每个模块的真实体积
 import fs from 'node:fs';
 
-const SRC = '<项目目录>/qq-bridge-main/src/bridge.js';
+const SRC = '<项目根>/src/bridge.js';
 const lines = fs.readFileSync(SRC, 'utf8').split('\n');
 
 // 采集所有函数 + 行数
@@ -44,7 +44,7 @@ for (const f of fns) {
   else unassigned.push(f);
 }
 
-const EXISTING = new Set(fs.readdirSync('<项目目录>/qq-bridge-main/src'));
+const EXISTING = new Set(fs.readdirSync('<项目根>/src'));
 const totalFnLines = fns.reduce((a, f) => a + f.len, 0);
 
 console.log('=========== 重构后的模块划分（按职责聚合，数据来自实测）===========\n');

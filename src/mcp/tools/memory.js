@@ -8,7 +8,7 @@ import { z } from 'zod';
 export function registerMemoryTools(server, { agentApi }) {
 server.tool(
   'qq_memory_append',
-  '记录一条轻量记忆：activeTopic=进行中的话题；pendingThought=你想说但还没说的话；memberImpression=对某位群友的印象（**必须**带 target=群友名字，顶层或 extra.target 都认）；**小标签**：memberImpression 时用 extra.tag 给这个人写一句**极简概括**（如"素质很低，爱说脏话""爱发图，手快"），**只留最新一条**——你对他的看法变了就重新写一句，旧的自动被顶掉；标签只写"他是什么样的人"，具体事件和时间留给印象（content）；**改关系**：memberImpression 时用 extra.relation 填档位（讨厌/路人/认识但不太熟/熟人/好朋友/家人）就能改这个人在你心里的位置——**可升可降，你的判断就是权威**，content 顺手写清是什么事（"他骂我「你怎么不去死」"），那就是以后你回答"为什么讨厌他"时要用的东西；两条硬边界：主人永远是家人、不降档，家人档只能由主人指定（别人最高好朋友）；**mood=你现在的心情**（content 填基调：平静/开心/得意/有点闷/烦躁/期待/心虚/难过，extra.because 填一句来由，extra.intensity 填 1~3）。心情是**全局**的：在一个群受的影响，到别的群还带着；但**跟别人提起时不要说是哪个群**（别人不一定知道还有别的群），只说"别处的事"；没有来由的心情就留空 because（照实说"说不上为什么"）。**只记事实**（他是谁/发生过什么/你的感受），不要写"下次该怎么办"这类规矩。给印象加一个槽位前缀（如「【作息】他早七上课」「【雷点】不爱被提胖」）——**同一槽位的新内容会覆盖旧的**，所以同一件事不会记两遍；没有槽位就按新条目追加。**句子里先写名字、别用"他/她"开头**（指代不清会让她把两个人记混——真实事故：她把"群友乙"和另一个人名片里的"来来"当成同一个人）。记忆会持久化，并在后续唤醒/qq_get_prompt 中自动出现。',
+  '记录一条轻量记忆：activeTopic=进行中的话题；pendingThought=你想说但还没说的话；memberImpression=对某位群友的印象（**必须**带 target=群友名字，顶层或 extra.target 都认；**记忆按 QQ 号锚定**——写名字就行，同一个人换了名片、或在不同群另有名字，都还是同一条记忆（认不出 QQ 时先按名字记下并标"待认领"，将来认出来会自动并过去）；直接填 QQ 号也认）；**小标签**：memberImpression 时用 extra.tag 给这个人写一句**极简概括**（如"素质很低，爱说脏话""爱发图，手快"），**只留最新一条**——你对他的看法变了就重新写一句，旧的自动被顶掉；标签只写"他是什么样的人"，具体事件和时间留给印象（content）；**改关系**：memberImpression 时用 extra.relation 填档位（讨厌/路人/认识但不太熟/熟人/好朋友/家人）就能改这个人在你心里的位置——**可升可降，你的判断就是权威**，content 顺手写清是什么事（"他骂我「你怎么不去死」"），那就是以后你回答"为什么讨厌他"时要用的东西；两条硬边界：主人永远是家人、不降档，家人档只能由主人指定（别人最高好朋友）；**mood=你现在的心情**（content 填基调：平静/开心/得意/有点闷/烦躁/期待/心虚/难过，extra.because 填一句来由，extra.intensity 填 1~3）。心情是**全局**的：在一个群受的影响，到别的群还带着；但**跟别人提起时不要说是哪个群**（别人不一定知道还有别的群），只说"别处的事"；没有来由的心情就留空 because（照实说"说不上为什么"）。**只记事实**（他是谁/发生过什么/你的感受），不要写"下次该怎么办"这类规矩。给印象加一个槽位前缀（如「【作息】他早七上课」「【雷点】不爱被提胖」）——**同一槽位的新内容会覆盖旧的**，所以同一件事不会记两遍；没有槽位就按新条目追加。**句子里先写名字、别用"他/她"开头**（指代不清会让她把两个人记混——真实事故：她把"拾圆拾圆"和另一个人名片里的"来来"当成同一个人）。记忆会持久化，并在后续唤醒/qq_get_prompt 中自动出现。',
   {
     key: z.string().describe('会话 key，格式 group:群号 或 private:QQ号'),
     token: z.string().describe('会话令牌（**必填**，漏传会被拒；见唤醒提示中的【会话令牌】）'),
@@ -64,7 +64,7 @@ server.tool(
     category: z.enum(['activeTopic', 'pendingThought', 'memberImpression', 'mood']).optional().describe('可选：只看某一类记忆；mood=你现在的心情（全局，跨群生效）'),
     scope: z.enum(['this', 'all']).optional().describe('默认 this=本会话；all=连别的会话一起查（回答时标明是哪个群）'),
     query: z.string().optional().describe('scope=all 时的关键词，例如"粥""发图"；不填就列别的会话最近在聊什么'),
-    person: z.string().optional().describe('只看某位群友的印象（名字片段即可，如"UserQ"）'),
+    person: z.string().optional().describe('只看某位群友的印象（名字片段即可，如"Qruei"）'),
     since: z.string().optional().describe('只看这段时间之后的条目：7d / 12h / 2026-10-01（不填=不限）'),
     limit: z.number().optional().describe('最多返回几条带时间的印象，默认 20，上限 100')
   },
@@ -87,7 +87,7 @@ server.tool(
 
 server.tool(
   'qq_memory_remove',
-  '删除一条轻量记忆：activeTopic/pendingThought 用 content 匹配原文删除；memberImpression 用 target 参数指定群友名字删除。',
+  '删除一条轻量记忆：activeTopic/pendingThought 用 content 匹配原文删除；memberImpression 用 target 参数指定群友（名字或 QQ 号都认）。',
   {
     key: z.string().describe('会话 key，格式 group:群号 或 private:QQ号'),
     token: z.string().describe('会话令牌（**必填**，漏传会被拒；见唤醒提示中的【会话令牌】）'),

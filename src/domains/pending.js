@@ -156,7 +156,7 @@ export function createPendingModule(ctx) {
       } catch { /* 解析群成员名失败就用 QQ 号兜底 */ }
     }
     const targetIsSelf = !!targetId && selfId != null && String(targetId) === String(selfId);
-    // 被拍的是**别人**时也把名字解析出来：不然材料里写的是「戳了戳 3951361727」，
+    // 被拍的是**别人**时也把名字解析出来：不然材料里写的是「戳了戳 10000003」，
     // 她不知道那串数字是谁（既不认识也说不出是"别人"）。解析失败就用 QQ 兜底。
     let targetName = '';
     if (kind === 'group' && targetId && !targetIsSelf) {
@@ -186,7 +186,7 @@ export function createPendingModule(ctx) {
       scheduleWakeV2(key, 'bootstrap');
     } else if (st.wakeConfig?.triggers?.poke && targetIsSelf) {
       // 只在她**自己被拍**时唤醒。原来是"群里任何拍一拍都唤醒她"——真实事故（2026-09-29）：
-      // UserA 戳的是丰川祥子，她被叫醒后以为在拍她，回手给了管理员一个拍一拍（"还你一下，收好"），
+      // AF 戳的是丰川祥子，她被叫醒后以为在拍她，回手给了管理员一个拍一拍（"还你一下，收好"），
       // 群里当场"？"。别人互拍不叫她；她醒着时在【最近的群聊】里照样看得到（只是不因此唤醒）。
       scheduleWakeV2(key, 'poke');
     }

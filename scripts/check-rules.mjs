@@ -13,7 +13,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-const ROOT = '<项目目录>/qq-bridge-main';
+const ROOT = '<项目根>';
 const fail = [];
 const warn = [];
 const ok = [];
@@ -72,7 +72,7 @@ const cfg = JSON.parse(read(path.join(ROOT, 'config.json')) || '{}');
 {
   // 关键数字的唯一来源是 config；文案里出现的这些数字必须与 config 一致
   const want = [
-    { name: '单条字数上限', text: /≤\s*(\d+)\s*字/g, expect: 20 },
+    { name: '单条字数上限', text: /≤\s*(\d+)\s*字/g, expect: Number(cfg?.socialV2?.voiceOut?.maxChars ?? 20) },
     { name: '分条上限', text: /最多\s*(\d+)\s*条/g, expect: 3 },
     { name: '记忆条数', text: /每次唤醒最多\s*(\d+)\s*条|记\s*(\d+)\s*[~～-]\s*(\d+)\s*条/g, expect: 2 },
     // 图与表情：2026-10-03 起改成「相关就发、语境刹车」，不再按轮次限频；

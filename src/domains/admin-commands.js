@@ -6,9 +6,31 @@
 //
 // 接口同其它域：工厂 + ctx。正文与搬迁前**逐字相同**；因为正文里本来就用 `ctx.X` 访问
 // 可写状态，所以把 `ctx` 整个递进来，正文一个字都不用改。
+import path from 'node:path';
 import { matchAdminCommand, isSlashCommand } from '../core/commands.js';
 import { checkGroupAdminCommand, adminGroupsOf, GROUP_ADMIN_COMMANDS } from '../core/group-admin.js';
 import { parseSubscribeArg, looksLikeQq, addSpeakerId, removeSpeakerId } from '../core/subscribe.js';
+import { memoryFileName } from '../core/memory-files.js';
+
+// 默认角色（= 小鲸鱼本人）。退出角色扮演时切回她，而不是 role=null ——
+// null 时 currentRoleHint() 返回空串，她就彻底没有人格了（2026-10-19 改）。
+const DEFAULT_ROLE_NAME = '小鲸鱼';
+
+// 「/」速查：所有人可用。加命令时记得同步这里（有 check 脚本盯着命令表，但这份文案是手写的）。
+const HELP_TEXT = [
+  '可用命令（直接发，不用 @ 她）：',
+  '· /　看这份列表',
+  '· /status　当前状态（管理员）',
+  '· /reset　重置会话（管理员）',
+  '· /roles　看有哪些角色（所有人）',
+  '· /role <名字>　进入角色扮演（仅主人）',
+  '· /role off　退出角色扮演（仅主人）',
+  '· /订阅 <群号> <QQ或昵称>　订阅某人（管理员）',
+  '· /取消订阅 <群号> <QQ或昵称>　取消订阅（管理员）',
+  '· /订阅列表　看订阅（管理员）',
+  '· /安静　本群暂时闭嘴（群管理员）',
+  '· /恢复　本群恢复说话（群管理员）',
+].join('\n');
 
 export function createAdminCommandsModule(deps) {
   const {
@@ -56,8 +78,214 @@ export function createAdminCommandsModule(deps) {
     writeRoleState,
   } = deps;
 
-  // ── 「订阅」管理：speakerIds（订阅某人 = 他说任何话都唤醒她）───────────────
-  // 用户要的用法：私聊里说「订阅 20000001 群友辛」/「取消订阅 全部」/「订阅列表」。
+  /**
+   * 清掉一个会话的全部上下文（DSH 会话 + 材料 + 定时器）。
+   * reset 和「切换角色」共用：切角色必须清场，否则她会在新角色里回应切换前的旧对话
+   * （实测 2026-10-19：刚切到爱弥斯，她先回「设定收到啦！小爱这就上线」，因为上一轮还在要设定）。
+   * 返回值：是否清过（会话本来就不存在时也照清材料，返回 false 只表示没有 DSH 会话）。
+   */
+  function wipeConversation(key) {
+    const old = state.sessions[key];
+    const hadSession = Boolean(old);
+    if (hadSession) {
+      ctx.sessionEpoch++;
+      delete state.sessions[key];
+      reverse.delete(old);
+      collectors.delete(old);
+      sendToolSucceededSessions.delete(old);
+      pendingSendToolCalls.delete(old);
+      v2TurnStartAt.delete(old);
+      toolCallNames.delete(old);
+      social.silentTurns.delete(old);
+      social.exitingSessions.delete(old);
+    }
+    const pe = pending.get(key);
+    if (pe) {
+      clearTimeout(pe.timer);
+      cancelPendingEntry(pe).catch(() => {});
+    }
+    pending.delete(key);
+    queued.delete(key);
+    queuedHintAt.delete(key);
+    sessionPromises.delete(key);
+    drainPromptQueue(key, '会话已重置');
+    social.recentMessages.delete(key);
+    messageMediaStore.delete(key);
+    social.pendingSummaries.delete(key);
+    social.states.delete(key);
+    social.silentContext.delete(key);
+    slangWindows.delete(key);
+    slangExtractionCooldowns.delete(key);
+    slangSubmitTimes.delete(key);
+    cancelSocialTimers(key);
+    clearSocialV2Timers(key);
+    pendingWakeKeys.delete(key);
+    wakeConfigUpdatedKeys.delete(key);
+    markReadCalledKeys.delete(key);
+    wakeConfigMissCount.delete(key);
+    const removedV2 = socialV2.conversations.get(key);
+    if (removedV2?.agentToken) KNOWN_AGENT_TOKENS.delete(removedV2.agentToken);
+    socialV2.conversations.delete(key);
+    seenForwardIds.delete(key);
+    saveSocialV2State();
+    saveState();
+    return hadSession;
+  }
+
+  // ── 角色扮演隔离区（2026-10-19 主人要求）──────────────────────────────
+  // 不要忘记之前的对话，只隔离：进入扮演时把「这个会话」的上下文备份到磁盘、然后清场
+  // （她以新角色从干净的开场说话，不会接着切换前的旧对话）；退出扮演时原样恢复。
+  const ROLEPLAY_ISO_DIR = path.join(ROOT, 'state', 'roleplay-isolation');
+  const MEMORY_DIR = path.join(ROOT, 'state', 'memory');
+  const isoFileOf = (key) => path.join(ROLEPLAY_ISO_DIR, String(key).replace(/[^a-zA-Z0-9]+/g, '_') + '.json');
+  const memFileOf = (key) => {
+    const n = memoryFileName(key);
+    return n ? path.join(MEMORY_DIR, n) : '';
+  };
+  const emptyMemory = (memoryVersion = 2) => ({ activeTopics: [], pendingThoughts: [], memberImpressions: {}, memoryVersion });
+
+  /** 合并记忆：旧的 + 扮演期间的（小鲸鱼要能看到扮演时记下的事，带着 [扮演:角色] 标签）。 */
+  function mergeMemory(old, cur) {
+    const out = {
+      activeTopics: Array.isArray(old?.activeTopics) ? [...old.activeTopics] : [],
+      pendingThoughts: Array.isArray(old?.pendingThoughts) ? [...old.pendingThoughts] : [],
+      memberImpressions: old?.memberImpressions && typeof old.memberImpressions === 'object' ? JSON.parse(JSON.stringify(old.memberImpressions)) : {},
+      memoryVersion: old?.memoryVersion ?? cur?.memoryVersion ?? 2,
+    };
+    if (!cur) return out;
+    const seenTopic = new Set(out.activeTopics.map((t) => String(t?.text ?? '')));
+    for (const t of Array.isArray(cur.activeTopics) ? cur.activeTopics : []) {
+      const k = String(t?.text ?? '');
+      if (!k || seenTopic.has(k)) continue;
+      seenTopic.add(k);
+      out.activeTopics.push(t);
+    }
+    const seenThought = new Set(out.pendingThoughts.map((t) => String(t?.text ?? '')));
+    for (const t of Array.isArray(cur.pendingThoughts) ? cur.pendingThoughts : []) {
+      const k = String(t?.text ?? '');
+      if (!k || seenThought.has(k)) continue;
+      seenThought.add(k);
+      out.pendingThoughts.push(t);
+    }
+    for (const [k, im] of Object.entries(cur.memberImpressions && typeof cur.memberImpressions === 'object' ? cur.memberImpressions : {})) {
+      const prev = out.memberImpressions[k] && typeof out.memberImpressions[k] === 'object' ? out.memberImpressions[k] : { traits: [] };
+      const traits = Array.isArray(prev.traits) ? [...prev.traits] : [];
+      const seen = new Set(traits);
+      for (const tr of Array.isArray(im?.traits) ? im.traits : []) {
+        if (!tr || seen.has(tr)) continue;
+        seen.add(tr);
+        traits.push(tr);
+      }
+      out.memberImpressions[k] = {
+        ...prev,
+        traits,
+        interactionCount: (Number(prev.interactionCount) || 0) + (Number(im?.interactionCount) || 0),
+        lastSeenAt: Math.max(Number(prev.lastSeenAt) || 0, Number(im?.lastSeenAt) || 0),
+        ...(im?.displayName && !prev.displayName ? { displayName: im.displayName } : {}),
+      };
+    }
+    return out;
+  }
+
+  /** 进入扮演：备份 session + conversation，然后清场。已备份过就不覆盖（角色间切换保持第一次的备份）。 */
+  function isolateConversation(key) {
+    try {
+      const f = isoFileOf(key);
+      if (!fs.existsSync(f)) {
+        const conv = socialV2.conversations.get(key) ?? null;
+        const snap = {
+          at: Date.now(),
+          key,
+          session: state.sessions[key] ?? null,
+          conversation: conv ? JSON.parse(JSON.stringify(conv)) : null,
+        };
+        // 记忆隔离（2026-10-19 主人要求）：备份这个会话的记忆文件再清空——
+        // 扮演的角色看不到小鲸鱼记得的事；扮演期间她记下的东西会带 [扮演:角色] 标签。
+        const memFile = memFileOf(key);
+        if (memFile && fs.existsSync(memFile)) {
+          try {
+            const mem = JSON.parse(fs.readFileSync(memFile, 'utf8'));
+            snap.memory = mem;
+            const bak = memFile.replace(/\.json$/, '.roleplay-bak.json');
+            fs.copyFileSync(memFile, bak);
+            fs.writeFileSync(memFile, JSON.stringify(emptyMemory(mem?.memoryVersion ?? 2)), 'utf8');
+            log(`角色扮演：已隔离 ${key} 的记忆（备份 ${bak}）`);
+          } catch (e) {
+            log(`角色扮演：隔离记忆失败（继续）：${e?.message ?? e}`);
+          }
+        }
+        fs.mkdirSync(ROLEPLAY_ISO_DIR, { recursive: true });
+        fs.writeFileSync(f, JSON.stringify(snap), 'utf8');
+        log(`角色扮演：已隔离 ${key} 的上下文（session=${snap.session ?? '无'}，材料=${snap.conversation ? '有' : '无'}）`);
+      }
+    } catch (error) {
+      log(`角色扮演：隔离 ${key} 失败（继续切换）：${error?.message ?? error}`);
+    }
+    wipeConversation(key);
+  }
+
+  /** 退出扮演：恢复备份的 session + conversation，并把隔离期间的聊天记录合并回去。返回是否恢复过。 */
+  function restoreConversation(key) {
+    try {
+      const f = isoFileOf(key);
+      if (!fs.existsSync(f)) return false;
+      const snap = JSON.parse(fs.readFileSync(f, 'utf8'));
+      const cur = socialV2.conversations.get(key) ?? null;
+      const merged = snap?.conversation ? JSON.parse(JSON.stringify(snap.conversation)) : (cur ? JSON.parse(JSON.stringify(cur)) : null);
+      // 主人要求：扮演期间的记录要保留。把隔离期间新产生的聊天记录并回旧材料里，
+      // 按时间排序、按 messageId 去重，最多留最近 150 条（和桥的常规上限一致）。
+      if (merged && Array.isArray(cur?.recentMessages) && cur.recentMessages.length) {
+        const seen = new Set();
+        const all = [];
+        for (const m of [...(Array.isArray(merged.recentMessages) ? merged.recentMessages : []), ...cur.recentMessages]) {
+          const mid = String(m?.messageId ?? '');
+          const dedupeKey = mid ? `id:${mid}` : `seq:${m?.seq}:${String(m?.text ?? m?.plain ?? '').slice(0, 40)}`;
+          if (seen.has(dedupeKey)) continue;
+          seen.add(dedupeKey);
+          all.push(m);
+        }
+        all.sort((a, b) => (Number(a?.time) || 0) - (Number(b?.time) || 0));
+        merged.recentMessages = all.slice(-150);
+        log(`角色扮演：合并 ${key} 的聊天记录（旧 ${Array.isArray(snap?.conversation?.recentMessages) ? snap.conversation.recentMessages.length : 0} 条 + 隔离期间 ${cur.recentMessages.length} 条 → ${merged.recentMessages.length} 条）`);
+      }
+      if (snap?.session) state.sessions[key] = snap.session;
+      if (merged) {
+        socialV2.conversations.set(key, merged);
+        if (merged.agentToken) KNOWN_AGENT_TOKENS.add(merged.agentToken);
+      }
+      // 记忆：旧记忆 + 扮演期间的记忆合并写回——小鲸鱼要能看到扮演时记下的事（带 [扮演:角色] 标签）。
+      const memFile = memFileOf(key);
+      if (snap?.memory && memFile) {
+        try {
+          const curMem = fs.existsSync(memFile) ? JSON.parse(fs.readFileSync(memFile, 'utf8')) : null;
+          const mergedMem = mergeMemory(snap.memory, curMem);
+          fs.writeFileSync(memFile, JSON.stringify(mergedMem), 'utf8');
+          const st = socialV2.conversations.get(key);
+          if (st) {
+            st.activeTopics = mergedMem.activeTopics;
+            st.pendingThoughts = mergedMem.pendingThoughts;
+            st.memberImpressions = mergedMem.memberImpressions;
+          }
+          const bak = memFile.replace(/\.json$/, '.roleplay-bak.json');
+          if (fs.existsSync(bak)) fs.unlinkSync(bak);
+          log(`角色扮演：已合并 ${key} 的记忆（旧 ${Array.isArray(snap.memory.activeTopics) ? snap.memory.activeTopics.length : 0} 话题 + 扮演期间 ${Array.isArray(curMem?.activeTopics) ? curMem.activeTopics.length : 0} 话题）`);
+        } catch (e) {
+          log(`角色扮演：合并记忆失败：${e?.message ?? e}`);
+        }
+      }
+      saveState();
+      saveSocialV2State();
+      fs.unlinkSync(f);
+      log(`角色扮演：已解除隔离，恢复 ${key} 的上下文（session=${snap?.session ?? '无'}）`);
+      return true;
+    } catch (error) {
+      log(`角色扮演：恢复 ${key} 失败：${error?.message ?? error}`);
+      return false;
+    }
+  }
+
+  // 「订阅」管理：speakerIds（订阅某人 = 他说任何话都唤醒她）───────────────
+  // 用户要的用法：私聊里说「订阅 20000001 讨厌偏头痛」/「取消订阅 全部」/「订阅列表」。
   // 名字→QQ 靠**最近的群成员名缓存**反查（bridge 收到消息时会缓存 groupId:qq -> 名字），
   // 所以要求"这人最近在群里说过话"；不想等就直接给 QQ 号。
   function cacheEntriesFor(groupId) {
@@ -221,6 +449,11 @@ export function createAdminCommandsModule(deps) {
     // 私聊不必点名（你说什么都是对她说）；斜杠写法不受限（显式指令，历史上就随处可用）。
     if (hit && !slash && kind === 'group' && !addressed) return false;
     if (!hit && !slash) return false;
+    if (hit?.id === 'help') {
+      // 「/」速查：放在权限检查**之前**，所有人（群友/管理员/主人）都能看。
+      await sendToQQ(key, HELP_TEXT);
+      return true;
+    }
     if (!isOwner) {
       // 被**委派**的群管理员（用户 2026-10-03 定）：按群授权、权限低于 owner。
       // 只放行白名单里的指令；私聊必须显式带群号；危险动作（切角色/全局静默/清记忆…）一律拒绝。
@@ -271,50 +504,8 @@ export function createAdminCommandsModule(deps) {
       return await handleSubscribeCommand(cfg, { id: cmdId, arg: `${verdict.groupId} ${hit?.arg ?? ''}`.trim() }, key, plainContent);
     }
     if (hit?.id === 'reset' || plainContent === '/reset' || plainContent === '/new') {
-      const old = state.sessions[key];
-      if (old) {
-        ctx.sessionEpoch++;
-        delete state.sessions[key];
-        reverse.delete(old);
-        collectors.delete(old);
-        sendToolSucceededSessions.delete(old);
-        pendingSendToolCalls.delete(old);
-        v2TurnStartAt.delete(old);
-        toolCallNames.delete(old);
-        social.silentTurns.delete(old);
-        social.exitingSessions.delete(old);
-        const pe = pending.get(key);
-        if (pe) {
-          clearTimeout(pe.timer);
-          cancelPendingEntry(pe).catch(() => {});
-        }
-        pending.delete(key);
-        queued.delete(key);
-        queuedHintAt.delete(key);
-        sessionPromises.delete(key);
-        drainPromptQueue(key, '会话已重置');
-        social.recentMessages.delete(key);
-        messageMediaStore.delete(key);
-        social.pendingSummaries.delete(key);
-        social.states.delete(key);
-        social.silentContext.delete(key);
-        slangWindows.delete(key);
-        slangExtractionCooldowns.delete(key);
-        slangSubmitTimes.delete(key);
-        cancelSocialTimers(key);
-        clearSocialV2Timers(key);
-        pendingWakeKeys.delete(key);
-        wakeConfigUpdatedKeys.delete(key);
-        markReadCalledKeys.delete(key);
-        wakeConfigMissCount.delete(key);
-        const removedV2 = socialV2.conversations.get(key);
-        if (removedV2?.agentToken) KNOWN_AGENT_TOKENS.delete(removedV2.agentToken);
-        socialV2.conversations.delete(key);
-        seenForwardIds.delete(key);
-        saveSocialV2State();
-        saveState();
-        await sendToQQ(key, '已重置会话，下次消息将开新上下文');
-      }
+      const wiped = wipeConversation(key);
+      if (wiped) await sendToQQ(key, '已重置会话，下次消息将开新上下文');
       return true;
       }
       if (hit?.id === 'status' || plainContent === '/status') {
@@ -322,12 +513,32 @@ export function createAdminCommandsModule(deps) {
       await sendToQQ(key, `会话 ${state.sessions[key] ?? '未创建'}；白名单 ${allowed(kind, id, cfg) ? '通过' : '拦截'}；角色 ${rs.role ?? '无'}；模式 ${rs.mode}`);
       return true;
       }
+      if (hit?.id === 'roles' || plainContent === '/roles') {
+      // /roles：列 roles/ 下可扮演的角色（目录式 <名字>/core.md 和单文件 <名字>.md 都算）
+      let names = [];
+      try {
+        const dir = path.join(ROOT, 'roles');
+        const files = fs.readdirSync(dir)
+          .filter((f) => f.endsWith('.md') && !['README.md', 'CHANGELOG.md'].includes(f) && !f.startsWith('_'))
+          .map((f) => f.slice(0, -3));
+        const dirs = fs.readdirSync(dir, { withFileTypes: true })
+          .filter((d) => d.isDirectory() && fs.existsSync(path.join(dir, d.name, 'core.md')))
+          .map((d) => d.name);
+        names = [...new Set([...files, ...dirs])].sort((a, b) => a.localeCompare(b, 'zh-CN'));
+      } catch { names = []; }
+      const curRole = readRoleState().role ?? DEFAULT_ROLE_NAME;
+      await sendToQQ(key, names.length
+        ? `可扮演的角色：${names.map((n) => (n === curRole ? `${n}（当前）` : n)).join('、')}\n用法：/role <角色名> 进入，/role off 退出`
+        : 'roles/ 目录下还没有角色文件。');
+      return true;
+      }
       if (hit?.id === 'role' || plainContent === '/role' || plainContent.startsWith('/role ')) {
       // 斜杠写法从 "/role " 之后取名字；自然语言写法由匹配层用命名组 arg 取出来。
       const name = sanitizeRoleName(hit?.id === 'role' ? hit.arg : plainContent.slice(5).trim());
       if (!name || name === 'off' || name === 'clear') {
-        writeRoleState(null, roleState.mode);
-        await sendToQQ(key, '已清除角色，恢复正常人格。');
+        writeRoleState(DEFAULT_ROLE_NAME, roleState.mode);
+        const restored = restoreConversation(key);
+        await sendToQQ(key, restored ? '已退出角色扮演，恢复正常人格（之前的对话已恢复）。' : '已退出角色扮演，恢复正常人格。');
       } else {
         // 角色可以是目录（roles/<名字>/core.md，模块化结构）或单文件（roles/<名字>.md，旧结构）。
         const roleDir = path.join(ROOT, 'roles', name, 'core.md');
@@ -335,8 +546,17 @@ export function createAdminCommandsModule(deps) {
         if (!fs.existsSync(roleFile)) {
           await sendToQQ(key, `角色「${name}」不存在。角色放 qq-bridge/roles/<名字>/core.md，或单个 roles/<名字>.md。`);
         } else {
+          const wasDefault = !roleState?.role || roleState.role === DEFAULT_ROLE_NAME;
           writeRoleState(name, roleState.mode);
-          await sendToQQ(key, `已切换角色：${name}。`);
+          if (wasDefault) {
+            // 进入扮演：先备份这个会话的上下文，再清场（她以新角色从干净开场说话）
+            isolateConversation(key);
+            await sendToQQ(key, `已切换角色：${name}（会话已隔离，下一条就是角色本人）。`);
+          } else {
+            // 角色间切换：第一次的备份已在，继续清场就行
+            wipeConversation(key);
+            await sendToQQ(key, `已切换角色：${name}。`);
+          }
         }
       }
       return true;

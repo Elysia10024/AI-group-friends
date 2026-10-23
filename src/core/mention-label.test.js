@@ -10,8 +10,8 @@ test('mentionLabel：只有确实拍你才写"拍了一拍你"', () => {
 
 test('mentionLabel：老记录没有字段时按正文兜底，默认不认成"拍你"', () => {
   // social-log 对"拍你"写的是「…戳了戳 你」，对拍别人写的是「…戳了戳 <QQ>」
-  assert.equal(mentionLabel({ kind: 'poke', text: '[拍一拍] UserA 戳了戳 你' }), '拍了一拍你');
-  assert.equal(mentionLabel({ kind: 'poke', text: '[拍一拍] UserA 戳了戳 945327621 的初华，被神人化了' }), '拍了别人');
+  assert.equal(mentionLabel({ kind: 'poke', text: '[拍一拍] AF 戳了戳 你' }), '拍了一拍你');
+  assert.equal(mentionLabel({ kind: 'poke', text: '[拍一拍] AF 戳了戳 10000006 的初华，被神人化了' }), '拍了别人');
   assert.equal(mentionLabel({ kind: 'poke', text: '' }), '拍了别人', '没证据就别说是拍你（这正是那次事故）');
 });
 

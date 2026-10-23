@@ -2,7 +2,7 @@
 // 目的：搬 3037 行之前，先量清 ① 它对外暴露多少接口 ② 它依赖 main() 里多少闭包变量
 import fs from 'node:fs';
 
-const SRC = '<项目目录>/qq-bridge-main/src/bridge.js';
+const SRC = '<项目根>/src/bridge.js';
 const lines = fs.readFileSync(SRC, 'utf8').split('\n');
 
 const START = 1458;            // startConsoleServer 起始行（1-based）

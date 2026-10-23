@@ -13,8 +13,17 @@
 //   - now：一次调用内只取一次时间戳（原实现多次调 Date.now()，毫秒级不可感知差异）
 //   - redact：入库前必须脱敏 agent token。**缺失就抛错**，宁可炸也不要静默把 token
 //     写进 social-v2.json 再被注入到 prompt 里。
-import { matchExistingKey, personShortName } from './person-name.js';
+import { matchExistingKey, personShortName, resolvePersonQq, displayNameForQq, QQ_KEY_RE } from './person-name.js';
 import { relativeDayLabel } from './local-day.js';
+
+/**
+ * 记忆存储格式版本。**顶层**写在每个会话的记忆文件里（state/memory/<key>.json）。
+ * 1 → 2（2026-10-15）：memberImpressions 的 key 从"名字"改成 **QQ 号**（唯一锚点），
+ * 解析不出 QQ 的条目保留原名并标 `pendingQq: true`；记录里可带 `displayName`（显示兜底）。
+ * 为什么要版本号：将来再改格式时，迁移脚本能一眼看出"这个文件迁过没有"（幂等的判据），
+ * 不用靠"猜 key 是不是数字"。
+ */
+export const MEMORY_VERSION = 2;
 
 /** 把配置值夹到合法区间；非法/缺失时用默认值（与原实现 `Number(x) || d` 语义一致）。 */
 function clampInt(value, lo, hi, dflt) {
@@ -29,11 +38,15 @@ function clampInt(value, lo, hi, dflt) {
  * @param {number} [opts.memoryMaxMembers] 最多展开多少位群友（默认 24，夹在 1..60）
  * @param {number} [opts.memoryMaxTraits] 每人最多几条印象（默认 3，夹在 1..20）
  * @param {number} [opts.memoryTraitChars] 每条印象截断长度（默认 170，夹在 40..300）
+ * @param {object} [opts.people] state/memory/people.json —— 用来把 QQ 反查成**当前名片**
+ * @param {string} [opts.sessionKey] 会话 key（决定"本会话里他叫什么"）
  * @returns {string} 空串表示无可渲染内容
  */
 export function formatMemory(st, opts = {}) {
   if (!st) return '';
   const now = opts.now != null ? Number(opts.now) : Date.now();
+  const people = opts.people ?? null;
+  const sessionKey = String(opts.sessionKey ?? '');
   const lines = [];
 
   const topics = Array.isArray(st.activeTopics) ? st.activeTopics.filter((t) => t && t.text) : [];
@@ -71,7 +84,13 @@ export function formatMemory(st, opts = {}) {
     const memMaxTraits = clampInt(opts.memoryMaxTraits, 1, 20, 3);
     const memTraitChars = clampInt(opts.memoryTraitChars, 40, 300, 170);
     lines.push('【对群友的印象】（只列最近互动的，记新的会挤掉旧的）');
-    for (const [name, im] of impEntries.slice(0, memMaxMembers)) {
+    for (const [key, im] of impEntries.slice(0, memMaxMembers)) {
+      // 显示层**反查当前名片**：key 是 QQ（身份锚点），她看到的必须还是名字
+      // （"群三水"改完还得是"群三水"）—— 名片以后再怎么改，这里都会自动跟上。
+      // 还没认领 QQ 的条目（pendingQq）key 本身就是名字，直接用。
+      const label = QQ_KEY_RE.test(key)
+        ? displayNameForQq(key, { key: sessionKey, people, fallback: im?.displayName })
+        : key;
       const rawTraits = Array.isArray(im.traits) ? im.traits : [];
       const rawMeta = Array.isArray(im.traitMeta) ? im.traitMeta : [];
       // 时间戳与 traits **同索引**（由 mergeTraitWithMeta 维护）。长度不一致说明中间被动过
@@ -88,7 +107,7 @@ export function formatMemory(st, opts = {}) {
         const ago = metaOk ? relativeDayLabel(rawMeta[from + k]?.lastAt, now) : '';
         return ago ? `${clipped}（${ago}）` : clipped;
       });
-      lines.push(`- ${name}：${traits.length ? traits.join('；') : '暂无记录'}（互动 ${Number(im.interactionCount) || 0} 次）`);
+      lines.push(`- ${label}：${traits.length ? traits.join('；') : '暂无记录'}（互动 ${Number(im.interactionCount) || 0} 次）`);
     }
     if (impEntries.length > memMaxMembers) {
       lines.push(`（还有 ${impEntries.length - memMaxMembers} 位群友的印象没展开）`);
@@ -306,8 +325,110 @@ export function mergeTraitWithMeta(traits, traitMeta, text, { cap = TRAIT_CAP, n
 }
 
 /**
- * 追加一条记忆。**就地修改 st**（与原实现一致），返回"是否需要落盘"。
+ * 把**同一个人**的多份印象记录合并成一份（迁移脚本与"认领旧名字 key"共用）。
  *
+ * 规则（主人 2026-10-15 定）：
+ *   · 带槽位前缀的（【作息】…等）**同槽位只留最新一条**；依据是 traitMeta.lastAt（哪个有值用哪个），
+ *     都没值时按数组顺序取后者（写入侧保证"末尾 = 最新"，见 mergeTraitWithMeta）；
+ *   · 无槽位的按时间顺序追加在后面；
+ *   · **完全相同的文本去重**（并掉时间，不新增条目）；
+ *   · interactionCount 相加、lastSeenAt 取最大；
+ *   · traitMeta 必须与合并后的 traits **一一对应**（长度不匹配会让渲染里的「（N 天前）」整块失效，
+ *     那是既有判据，不能破坏）；某份记录自己就对不上的，那份的时间整体丢弃。
+ *
+ * 不丢信息的两处细节：同一槽位被覆盖的那条、以及完全重复的那条，它们的 firstAt / hits
+ * 会**并进胜出的那条**（与写入路径的 touched() 同口径：firstAt 留最早、lastAt 取最大、hits 累加）。
+ *
+ * @param {Array<{traits?:string[], traitMeta?:Array, interactionCount?:number, lastSeenAt?:number}>} records
+ * @param {{cap?:number}} [opts] cap = 合并后最多保留几条（默认 TRAIT_CAP，与写入路径同一上限）
+ * @returns {{traits:string[], traitMeta:Array<{firstAt:number,lastAt:number,hits:number}>,
+ *            interactionCount:number, lastSeenAt:number, droppedTexts:string[], droppedByCap:number}}
+ */
+export function mergeImpressionRecords(records, { cap = TRAIT_CAP } = {}) {
+  const EMPTY_META = { firstAt: 0, lastAt: 0, hits: 0 };
+  const mergeMeta = (a, b) => {
+    const firsts = [Number(a?.firstAt) || 0, Number(b?.firstAt) || 0].filter((x) => x > 0);
+    return {
+      firstAt: firsts.length ? Math.min(...firsts) : 0,
+      lastAt: Math.max(Number(a?.lastAt) || 0, Number(b?.lastAt) || 0),
+      hits: (Number(a?.hits) || 0) + (Number(b?.hits) || 0)
+    };
+  };
+  const slotOf = (s) => {
+    const m = /^【([^】]{1,6})】/.exec(String(s).trim());
+    return m ? m[1] : '';
+  };
+
+  const list = (Array.isArray(records) ? records : []).filter((r) => r && typeof r === 'object');
+  const flat = [];
+  let interactionCount = 0;
+  let lastSeenAt = 0;
+  for (const r of list) {
+    interactionCount += Number(r.interactionCount) || 0;
+    lastSeenAt = Math.max(lastSeenAt, Number(r.lastSeenAt) || 0);
+    const traits = Array.isArray(r.traits) ? r.traits : [];
+    const meta = Array.isArray(r.traitMeta) && r.traitMeta.length === traits.length ? r.traitMeta : [];
+    const seenAt = Number(r.lastSeenAt) || 0;
+    for (let i = 0; i < traits.length; i += 1) {
+      const text = String(traits[i] ?? '').trim();
+      if (!text) continue;
+      const raw = meta[i];
+      const m = raw && typeof raw === 'object'
+        ? { firstAt: Number(raw.firstAt) || 0, lastAt: Number(raw.lastAt) || 0, hits: Number(raw.hits) || 0 }
+        : { ...EMPTY_META };
+      // 排序键：这条自己最后一次被提到的时间；没有就用它所属记录的 lastSeenAt（老条目兜底）。
+      // 都没有（0）时保持原顺序 —— 稳定排序保证"同一条记录内部仍是旧 → 新"。
+      flat.push({ text, meta: m, orderAt: m.lastAt || seenAt || 0, seq: flat.length });
+    }
+  }
+  const sorted = [...flat].sort((a, b) => (a.orderAt - b.orderAt) || (a.seq - b.seq));
+
+  // 第一遍：每个槽位的**胜出者** = 它在该序列里最后出现的那条（顺序即"越靠后越新"）。
+  const winner = new Map();
+  sorted.forEach((item, i) => {
+    const slot = slotOf(item.text);
+    if (slot) winner.set(slot, i);
+  });
+
+  const outTexts = [];
+  const outMeta = [];
+  const byText = new Map();     // 完全相同的文本 → 在 out 里的下标
+  const carried = new Map();    // 被同槽位覆盖的条目，把时间攒着并进胜出者
+  const droppedTexts = [];
+
+  for (let i = 0; i < sorted.length; i += 1) {
+    const item = sorted[i];
+    const slot = slotOf(item.text);
+    if (slot && winner.get(slot) !== i) {
+      carried.set(slot, mergeMeta(carried.get(slot) ?? EMPTY_META, item.meta));
+      droppedTexts.push(item.text);
+      continue;
+    }
+    let meta = item.meta;
+    if (slot && carried.has(slot)) meta = mergeMeta(carried.get(slot), meta);
+    const dup = byText.get(item.text);
+    if (dup !== undefined) {
+      outMeta[dup] = mergeMeta(outMeta[dup], meta);
+      droppedTexts.push(item.text);
+      continue;
+    }
+    outTexts.push(item.text);
+    outMeta.push(meta);
+    byText.set(item.text, outTexts.length - 1);
+  }
+
+  // 超上限时丢**最旧**的（与写入路径的 slice(-cap) 同口径），并如实记下丢了几条
+  let droppedByCap = 0;
+  if (cap > 0 && outTexts.length > cap) {
+    droppedByCap = outTexts.length - cap;
+    outTexts.splice(0, droppedByCap);
+    outMeta.splice(0, droppedByCap);
+  }
+  return { traits: outTexts, traitMeta: outMeta, interactionCount, lastSeenAt, droppedTexts, droppedByCap };
+}
+
+/**
+ * 追加一条记忆。**就地修改 st**（与原实现一致），返回"是否需要落盘"。
  * @param {object} st 二代社交状态（会被就地修改）
  * @param {object} args
  * @param {'activeTopic'|'pendingThought'|'memberImpression'} args.category
@@ -317,7 +438,7 @@ export function mergeTraitWithMeta(traits, traitMeta, text, { cap = TRAIT_CAP, n
  * @param {(s: string) => string} args.redact **必填**：入库前脱敏
  * @returns {boolean} true = 调用方应落盘；false = 无事发生（与原实现的提前 return 对齐）
  */
-export function appendMemory(st, { category, content, extra = {}, now, redact } = {}) {
+export function appendMemory(st, { category, content, extra = {}, now, redact, key = '', people = null } = {}) {
   if (typeof redact !== 'function') {
     throw new TypeError('appendMemory: 必须传入 redact 函数（记忆入库前要脱敏 agent token）');
   }
@@ -375,18 +496,43 @@ export function appendMemory(st, { category, content, extra = {}, now, redact } 
     const rawTarget = String(extra.target || '').trim();
     if (!rawTarget || ['__proto__', 'constructor', 'prototype'].includes(rawTarget)) return false;
     if (!st.memberImpressions || typeof st.memberImpressions !== 'object') st.memberImpressions = {};
-    // **名字归一**：key 用短名（长名片的后缀/梗不算名字的一部分），并且命中已有的人就不再开第二个 key。
-    // 真实事故（2026-10-02）：key 是「群友丁（！？来来？！）」，她把"来来"当成了另一个人的名字，
-    // 在群里把 群友乙 和 来来 答成同一个人。
-    const existing = matchExistingKey(rawTarget, Object.keys(st.memberImpressions));
-    const target = existing || personShortName(rawTarget) || rawTarget;
+    // **身份锚点（2026-10-15）**：key 用 **QQ 号**，名字只是"现在怎么称呼"。
+    // 以前 key 是名字 → 名片一改就分裂成两条（主人自己裂成杨森/群三水/测试用户三份），
+    // 而关系档挂在 QQ 上，两边接不上。解析不出 QQ 时**保留名字并标 pendingQq**（将来能认领），
+    // 同时仍按短名归一 —— 免得同一个还没认领的人开出两个名字 key（2026-10-02 那次"来来"事故）。
+    const qq = resolvePersonQq(rawTarget, { key, people, st });
+    const target = qq
+      || matchExistingKey(rawTarget, Object.keys(st.memberImpressions))
+      || personShortName(rawTarget)
+      || rawTarget;
+    // 认领：这个人以前以**名字**存过（pendingQq），现在能算出 QQ 了 → 把旧条目的印象并过来，
+    // 并删掉旧 key。这就是"将来名片又变了也不用再动一遍数据"的后门：显示层查表、写入层认领。
+    const shortTarget = personShortName(rawTarget) || rawTarget;
+    const legacyKeys = qq
+      ? Object.keys(st.memberImpressions).filter((k) => k !== target
+          && !QQ_KEY_RE.test(k)
+          && (k === rawTarget || personShortName(k) === shortTarget || k === shortTarget))
+      : [];
     const old = st.memberImpressions[target] || {};
+    let baseTraits = Array.isArray(old.traits) ? old.traits.slice(-TRAIT_CAP) : [];
+    let baseMeta = old.traitMeta;
+    let baseCount = Number(old.interactionCount) || 0;
+    if (legacyKeys.length) {
+      const mergedOld = mergeImpressionRecords([
+        { traits: baseTraits, traitMeta: baseMeta, interactionCount: baseCount, lastSeenAt: Number(old.lastSeenAt) || 0 },
+        ...legacyKeys.map((k) => st.memberImpressions[k])
+      ]);
+      baseTraits = mergedOld.traits;
+      baseMeta = mergedOld.traitMeta;
+      baseCount = mergedOld.interactionCount;
+      for (const k of legacyKeys) delete st.memberImpressions[k];
+    }
     // 保留**最新**的 20 条，超限丢最旧的 —— 原实现 slice(0, 10) 保留最旧的 10 条，
     // 结果超过 10 条之后新写的观察永远存不进去。
     // 去重：不只是"完全相等"，近似重复（同一件事换个说法）也合并，见 mergeTrait。
     const merged = mergeTraitWithMeta(
-      Array.isArray(old.traits) ? old.traits.slice(-TRAIT_CAP) : [],
-      old.traitMeta,
+      baseTraits,
+      baseMeta,
       text.slice(0, 300),
       { cap: TRAIT_CAP, now: ts }
     );
@@ -395,9 +541,16 @@ export function appendMemory(st, { category, content, extra = {}, now, redact } 
       // 与 traits 同索引的时间（firstAt/lastAt/hits）。**只存不渲染** —— 材料里不写时间，
       // 被追问时才由 qq_memory_query / 控制台把时间带出来（2026-10-12 主人定）。
       traitMeta: merged.traitMeta,
-      interactionCount: (Number(old.interactionCount) || 0) + 1,
-      lastSeenAt: ts
+      interactionCount: baseCount + 1,
+      lastSeenAt: ts,
+      // displayName 只是"查不到名片时的显示兜底"（比如他退了群、people 表被清），
+      // **不是身份**：显示优先用 people/消息里的当前名片，这里存的旧名会自动被盖过。
+      ...(qq
+        ? { displayName: displayNameForQq(qq, { key, people, st, fallback: rawTarget }) }
+        : { pendingQq: true })
     };
+    // 这个会话的记忆从此是新格式（迁移脚本/将来再改格式时用来判断"迁过没有"）
+    st.memoryVersion = MEMORY_VERSION;
     // 群友总数上限 80，超限丢最久没互动的
     const impressionEntries = Object.entries(st.memberImpressions);
     if (impressionEntries.length > 80) {

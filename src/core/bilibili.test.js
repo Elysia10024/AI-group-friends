@@ -13,16 +13,16 @@ import {
 
 test('normalizeTargets：过滤非法、同 uid 合并群、alias 兜底', () => {
   const out = normalizeTargets([
-    { uid: 1001, alias: '示例UP', groups: [123456789, 123456789] },
-    { uid: '1002', alias: ' 第二个 ', groups: [123456789, 0, 'x'] },
+    { uid: 27534330, alias: '崩坏三', groups: [20000001, 20000001] },
+    { uid: '401742377', alias: ' 原神 ', groups: [20000001, 0, 'x'] },
     { uid: -1, groups: [1] },
-    { uid: 1001, alias: '重复', groups: [123] },
+    { uid: 27534330, alias: '重复', groups: [123] },
     { uid: 'abc', groups: [1] },
     null
   ]);
   assert.equal(out.length, 2);
-  assert.deepEqual(out[0], { uid: 1001, alias: '示例UP', groups: [123456789, 123], enabled: true });
-  assert.deepEqual(out[1], { uid: 1002, alias: '第二个', groups: [123456789], enabled: true });
+  assert.deepEqual(out[0], { uid: 27534330, alias: '崩坏三', groups: [20000001, 123], enabled: true });
+  assert.deepEqual(out[1], { uid: 401742377, alias: '原神', groups: [20000001], enabled: true });
   assert.deepEqual(normalizeTargets(null), []);
 });
 

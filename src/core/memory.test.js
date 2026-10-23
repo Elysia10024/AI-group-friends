@@ -13,6 +13,7 @@ import {
   appendMemory,
   mergeTrait,
   mergeTraitWithMeta,
+  mergeImpressionRecords,
   traitSimilarity,
   normalizeTrait,
   TRAIT_DUPLICATE_THRESHOLD
@@ -35,14 +36,14 @@ test('formatMemory：话题 / 想法 / 印象三段齐全', () => {
   const out = formatMemory({
     activeTopics: [{ text: '在聊重构', lastMentionAt: NOW - 5 * 60000, pendingQuestion: '谁负责' }],
     pendingThoughts: [{ text: '想吐槽', createdAt: NOW, expiresAt: NOW + HOUR, motivation: '好奇' }],
-    memberImpressions: { 群友乙: { traits: ['爱开玩笑'], interactionCount: 3, lastSeenAt: NOW } }
+    memberImpressions: { 拾圆拾圆: { traits: ['爱开玩笑'], interactionCount: 3, lastSeenAt: NOW } }
   }, op());
   assert.match(out, /【进行中的话题】/);
   assert.match(out, /- 在聊重构（5分钟前）；待追问：谁负责/);
   assert.match(out, /【你想说但还没说的】/);
   assert.match(out, /- 想吐槽（好奇）/);
   assert.match(out, /【对群友的印象】/);
-  assert.match(out, /- 群友乙：爱开玩笑（互动 3 次）/);
+  assert.match(out, /- 拾圆拾圆：爱开玩笑（互动 3 次）/);
 });
 
 test('formatMemory：超过 2 小时没提起的话题标「已搁置」', () => {
@@ -126,7 +127,7 @@ const DAY = 86400000;
 test('formatMemory：≥2 天的印象带上「多久以前」，今天/昨天的不标', () => {
   const out = formatMemory({
     memberImpressions: {
-      群友甲: {
+      群三水: {
         traits: ['【作息】白天有早八要上课', '今天刚说的', '昨天说的'],
         traitMeta: [
           { firstAt: NOW - 20 * DAY, lastAt: NOW - 12 * DAY, hits: 3 },
@@ -330,7 +331,7 @@ test('traitSimilarity：不相干的两条不该相似', () => {
 });
 
 test('mergeTrait：近似重复合并成一条，而不是越攒越多（真实事故复现）', () => {
-  // 群友乙真实攒过的 5 条近似印象
+  // 拾圆拾圆真实攒过的 5 条近似印象
   const seq = [
     '今天早七起来上课，下课还要去做实验，累到发气鼓鼓的毛绒玩偶表情来戳我。他累的时候发这种图就是撒娇，别凶他，接一句软的。',
     '今天早七上课，课后还有实验，早上就喊脑袋疼。累的时候会来戳我撒娇，接一句软的、别凶他。专属叫法「哦鲸鲸」。',
@@ -378,10 +379,10 @@ test('appendMemory：近似重复不再新增条目（写入路径也接上了�
   const st = {};
   const one = '今天早七上课，课后还有实验，累了会来戳我撒娇，接一句软的、别凶他。';
   const two = '他今天早七上课+课后实验，力竭了还来戳我撒娇，这种时候别凶，回一句软的就行。';
-  appendMemory(st, { category: 'memberImpression', content: one, extra: { target: '群友乙' }, ...op() });
-  appendMemory(st, { category: 'memberImpression', content: two, extra: { target: '群友乙' }, ...op() });
-  assert.equal(st.memberImpressions['群友乙'].traits.length, 1, '同一件事换个说法不该存成两条');
-  assert.equal(st.memberImpressions['群友乙'].interactionCount, 2);
+  appendMemory(st, { category: 'memberImpression', content: one, extra: { target: '拾圆拾圆' }, ...op() });
+  appendMemory(st, { category: 'memberImpression', content: two, extra: { target: '拾圆拾圆' }, ...op() });
+  assert.equal(st.memberImpressions['拾圆拾圆'].traits.length, 1, '同一件事换个说法不该存成两条');
+  assert.equal(st.memberImpressions['拾圆拾圆'].interactionCount, 2);
 });
 
 test('appendMemory：未知 category 也返回 true（与原实现一致：仍会落盘）', () => {
@@ -433,10 +434,150 @@ test('mergeTraitWithMeta：截断时两个数组同步裁，永远等长', () =>
 
 test('appendMemory：写进去的印象自带时间（traits 仍是字符串数组，旧代码不用改）', () => {
   const st = {};
-  appendMemory(st, { category: 'memberImpression', content: '他骂过我', extra: { target: 'UserQ' }, now: 777, redact: (s) => s });
-  appendMemory(st, { category: 'memberImpression', content: '他骂过我，很烦', extra: { target: 'UserQ' }, now: 888, redact: (s) => s });
-  const im = st.memberImpressions.UserQ;
+  appendMemory(st, { category: 'memberImpression', content: '他骂过我', extra: { target: 'Qruei' }, now: 777, redact: (s) => s });
+  appendMemory(st, { category: 'memberImpression', content: '他骂过我，很烦', extra: { target: 'Qruei' }, now: 888, redact: (s) => s });
+  const im = st.memberImpressions.Qruei;
   assert.equal(typeof im.traits[0], 'string', 'traits 还是字符串数组');
   assert.equal(im.traitMeta[0].firstAt, 777);
   assert.equal(im.traitMeta[0].lastAt, 888);
+});
+
+// ── 身份锚点（2026-10-15：key 从名字改成 QQ）────────────────────────────────
+const OWNER_QQ = '10000001';
+const OWNER_PEOPLE = {
+  [OWNER_QQ]: { names: { 'private:10000001': '群三水', 'group:20000002': '测试用户' } },
+  '1797151424': { names: { 'group:20000001': '至招，至丑，至绷的化身' } }
+};
+
+test('身份锚点：名片改了还是同一条记忆（key 是 QQ，不是名字）', () => {
+  const st = {};
+  const key = 'private:10000001';
+  appendMemory(st, {
+    category: 'memberImpression', content: '他说白天有早八', extra: { target: '群三水' },
+    now: 1000, redact: (s) => s, key, people: OWNER_PEOPLE
+  });
+  assert.ok(st.memberImpressions[OWNER_QQ], 'key 应该落成 QQ');
+  assert.equal(st.memberImpressions[OWNER_QQ].displayName, '群三水');
+  // 过了几天，名片改成了「三水」
+  const people2 = { [OWNER_QQ]: { names: { [key]: '三水' } } };
+  appendMemory(st, {
+    category: 'memberImpression', content: '【作息】他熬夜到三点才睡', extra: { target: '三水' },
+    now: 2000, redact: (s) => s, key, people: people2
+  });
+  assert.deepEqual(Object.keys(st.memberImpressions), [OWNER_QQ], '改名片不能再开一条');
+  assert.equal(st.memberImpressions[OWNER_QQ].traits.length, 2, '两条都在这一个人名下');
+  assert.equal(st.memberImpressions[OWNER_QQ].interactionCount, 2);
+  assert.equal(st.memoryVersion, 2, '写过一次就是 v2');
+});
+
+test('身份锚点：同一个人的不同群名片指向同一条（群里叫这个、私聊叫那个）', () => {
+  const st = {};
+  appendMemory(st, {
+    category: 'memberImpression', content: '私聊里他说要睡了', extra: { target: '群三水' },
+    now: 1, redact: (s) => s, key: 'private:10000001', people: OWNER_PEOPLE
+  });
+  appendMemory(st, {
+    category: 'memberImpression', content: '群里他发了个表情', extra: { target: '测试用户' },
+    now: 2, redact: (s) => s, key: 'group:20000001', people: OWNER_PEOPLE
+  });
+  assert.deepEqual(Object.keys(st.memberImpressions), [OWNER_QQ]);
+  assert.equal(st.memberImpressions[OWNER_QQ].traits.length, 2);
+});
+
+test('身份锚点：认领 —— 旧的名字条目在能算出 QQ 时并过来（后门）', () => {
+  const st = {
+    memberImpressions: {
+      群三水: {
+        traits: ['旧的印象：他爱拿我的配置当谈资'],
+        traitMeta: [{ firstAt: 111, lastAt: 222, hits: 3 }],
+        interactionCount: 5,
+        lastSeenAt: 500,
+        pendingQq: true
+      }
+    }
+  };
+  appendMemory(st, {
+    category: 'memberImpression', content: '新的印象：他今天夸我了', extra: { target: '群三水' },
+    now: 900, redact: (s) => s, key: 'private:10000001', people: OWNER_PEOPLE
+  });
+  assert.deepEqual(Object.keys(st.memberImpressions), [OWNER_QQ], '旧名字 key 应被认领并删掉');
+  const im = st.memberImpressions[OWNER_QQ];
+  assert.equal(im.traits.length, 2, '旧印象不能丢');
+  assert.equal(im.interactionCount, 6, '互动次数相加（旧的 5 + 这次 1）');
+  assert.equal(im.traitMeta[0].firstAt, 111, '旧的时间也要带过来（firstAt 保留最早的）');
+  assert.equal(im.pendingQq, undefined, '认领之后不该再挂 pendingQq');
+});
+
+test('身份锚点：解析不出 QQ 时**保留原名**并标 pendingQq（不丢弃、将来能认领）', () => {
+  const st = {};
+  appendMemory(st, {
+    category: 'memberImpression', content: '他好像不太爱说话', extra: { target: '保科柊史' },
+    now: 5, redact: (s) => s, key: 'group:20000001', people: OWNER_PEOPLE
+  });
+  assert.ok(st.memberImpressions['保科柊史'], '保留原名 key');
+  assert.equal(st.memberImpressions['保科柊史'].pendingQq, true);
+  assert.equal(st.memberImpressions['保科柊史'].traits.length, 1);
+});
+
+test('formatMemory：key 是 QQ 也**显示当前名片**（输出格式一个字不变）', () => {
+  const st = {
+    memberImpressions: {
+      [OWNER_QQ]: { traits: ['他说白天有早八'], interactionCount: 72, lastSeenAt: 999, displayName: '群三水' }
+    }
+  };
+  const out = formatMemory(st, { now: 1000, people: OWNER_PEOPLE, sessionKey: 'private:10000001' });
+  assert.ok(out.includes(`- 群三水：他说白天有早八（互动 72 次）`), out);
+  assert.ok(!out.includes(OWNER_QQ), '材料里不该出现 QQ 号');
+  // 换个会话（名片不同）→ 显示那个群里的名字
+  const out2 = formatMemory(st, { now: 1000, people: OWNER_PEOPLE, sessionKey: 'group:20000002' });
+  assert.ok(out2.includes('- 测试用户：'), out2);
+  // 查不到名片 → 用记录里的 displayName 兜底（仍不是数字）
+  const out3 = formatMemory(st, { now: 1000, people: {}, sessionKey: 'x' });
+  assert.ok(out3.includes('- 群三水：'), out3);
+});
+
+test('mergeImpressionRecords：同槽位保留最新、完全相同去重、时间对齐、计数相加', () => {
+  const a = {
+    traits: ['【作息】他早七上课', '他爱发图'],
+    traitMeta: [{ firstAt: 100, lastAt: 100, hits: 1 }, { firstAt: 100, lastAt: 100, hits: 1 }],
+    interactionCount: 3,
+    lastSeenAt: 1000
+  };
+  const b = {
+    traits: ['【作息】他改成早八上课了', '他爱发图', '他昨天送了我一张图'],
+    traitMeta: [{ firstAt: 200, lastAt: 200, hits: 1 }, { firstAt: 150, lastAt: 150, hits: 2 }, { firstAt: 200, lastAt: 200, hits: 1 }],
+    interactionCount: 4,
+    lastSeenAt: 2000
+  };
+  const m = mergeImpressionRecords([a, b]);
+  // 顺序：按"这条大概是什么时候的"旧→新；同时间的保持原顺序（稳定排序）。
+  // 槽位的胜出者（最新那条）自然落在它自己的时间位置上。
+  assert.deepEqual(m.traits, ['他爱发图', '【作息】他改成早八上课了', '他昨天送了我一张图']);
+  assert.equal(m.traitMeta.length, m.traits.length, 'traitMeta 必须与 traits 一一对应');
+  assert.equal(m.interactionCount, 7, '互动次数相加');
+  assert.equal(m.lastSeenAt, 2000, 'lastSeenAt 取最大');
+  assert.deepEqual(m.droppedTexts, ['【作息】他早七上课', '他爱发图'], '被槽位覆盖的、完全重复的都要记下来（报告里要列）');
+  // 完全相同的那条并掉，但时间要合起来（firstAt 取最早、hits 累加）
+  const kept = m.traits.indexOf('他爱发图');
+  assert.equal(m.traitMeta[kept].firstAt, 100);
+  assert.equal(m.traitMeta[kept].hits, 3);
+});
+
+test('mergeImpressionRecords：自己就对不上的记录整体丢时间（不给错位的时间）', () => {
+  const bad = { traits: ['甲', '乙'], traitMeta: [{ firstAt: 1, lastAt: 1, hits: 1 }], interactionCount: 1, lastSeenAt: 10 };
+  const m = mergeImpressionRecords([bad]);
+  assert.deepEqual(m.traits, ['甲', '乙']);
+  assert.equal(m.traitMeta.length, 2);
+  for (const meta of m.traitMeta) assert.equal(meta.lastAt, 0, '没时间就是 0，不能拿别人的时间顶上');
+});
+
+test('mergeImpressionRecords：无槽位按时间排、超上限丢最旧的', () => {
+  const mk = (text, lastAt) => ({ traits: [text], traitMeta: [{ firstAt: lastAt, lastAt, hits: 1 }], interactionCount: 1, lastSeenAt: lastAt });
+  const m = mergeImpressionRecords([mk('晚的', 300), mk('早的', 100), mk('中的', 200)]);
+  assert.deepEqual(m.traits, ['早的', '中的', '晚的'], '无槽位按时间旧→新');
+  const many = Array.from({ length: 25 }, (_, i) => mk(`第${i}件`, i + 1));
+  const capped = mergeImpressionRecords(many);
+  assert.equal(capped.traits.length, 20, '每人上限 20 条');
+  assert.equal(capped.droppedByCap, 5, '丢了几条要如实报出来');
+  assert.equal(capped.traits[0], '第5件', '丢的是最旧的');
 });

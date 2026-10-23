@@ -22,6 +22,7 @@ import { registerMediaTools } from './mcp/tools/media.js';
 import { registerStickerTools } from './mcp/tools/sticker.js';
 import { registerImageLibraryTools } from './mcp/tools/image-library.js';
 import { registerQzoneTools } from './mcp/tools/qzone.js';
+import { registerMomTools } from './mcp/tools/mom.js';
 import { registerBiliTools } from './mcp/tools/bili.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -68,13 +69,16 @@ registerMediaTools(server, { agentApi, cfg });
 // ── 表情包体系工具（二代仿真模式） ─────────────────────────────────────────
 registerStickerTools(server, { agentApi, cfg });
 
-// ── 本地图库（管理员在 <项目目录>\image 放的梗图）────────────────────────────
+// ── 本地图库（管理员在 <项目根>\image 放的梗图）────────────────────────────
 registerImageLibraryTools(server, { agentApi, cfg });
 
 // ── QQ 空间说说（她自己发的"自言自语"）──────────────────────────────────────
 registerQzoneTools(server, { agentApi, cfg });
 
-// ── B 站视频（可选）：群友分享的视频，每人每天限一次（配额在桥接侧）──────────────
+// ── 妈妈通道（2026-10-22）：她可以给妈妈留话，材料里会出现妈妈的回复 ─────────
+registerMomTools(server, { root: ROOT });
+
+// ── B 站视频（2026-10-23）：群友分享的视频，每人每天限一次（配额在桥接侧）──────
 registerBiliTools(server, { agentApi });
 
 await server.connect(new StdioServerTransport());

@@ -308,7 +308,8 @@ export const CONFIG_DEFAULTS = {
       assembler: { enabled: false, shadow: true }
     }
   },
-  // B 站订阅播报（可选）：只读轮询 UP 主投稿视频，新款直接发群，不花模型钱。
+  // B 站订阅播报（2026-10-23）：只读轮询 UP 主的投稿视频，有新款直接发群，不花模型钱。
+  // 默认关闭；真实订阅写在 config.json（targets 是对象数组，不经过控制台的类型规整）。
   bilibili: {
     enabled: false,
     intervalMs: 10 * 60 * 1000,
@@ -319,30 +320,6 @@ export const CONFIG_DEFAULTS = {
     pages: 2,
     template: '{alias} 发新视频了\n{title}\n{url}',
     targets: []
-  },
-  // 看群友分享的 B 站视频（可选）：每群友每天一次；抽帧依赖 yt-dlp+ffmpeg，未配置时降级为文字。
-  biliLook: {
-    enabled: true,
-    dailyPerUser: 1,
-    ownerBypass: true,
-    maxComments: 5,
-    withFrames: true,
-    frameIntervalSec: 2,
-    maxFrames: 150,
-    maxDurationSec: 300,
-    pythonPath: '',
-    ffmpegPath: '',
-    downloadTimeoutMs: 180000
-  },
-  // 空闲时段自己刷 B 站（可选）：默认关闭；groupKey 留空时用 allow.groups[0]。
-  biliScroll: {
-    enabled: false,
-    intervalMs: 3600000,
-    maxPerDay: 6,
-    maxWakePerDay: 6,
-    maxDurationSec: 300,
-    withFrames: true,
-    groupKey: ''
   }
 };
 
@@ -361,19 +338,11 @@ export const CONFIG_RANGES = {
   // 说说：上限别让人填出 0（0 会被 core 当成"没配"退回默认值，反而更糊涂）——夹到 1~10。
   'socialV2.qzone.dailyCap': [1, 10],
   'socialV2.qzone.maxChars': [1, 1000],
-  // B 站（可选）
+  // B 站订阅：轮询间隔别低于 2 分钟（单个 UID 一天 720 请求已经很密）；每轮最多补发 20 条。
   'bilibili.intervalMs': [120000, 3600000],
   'bilibili.maxPerRun': [1, 20],
   'bilibili.requestGapMs': [500, 60000],
-  'bilibili.pages': [1, 3],
-  'biliLook.dailyPerUser': [1, 10],
-  'biliLook.maxComments': [1, 20],
-  'biliLook.frameIntervalSec': [1, 60],
-  'biliLook.maxFrames': [1, 300],
-  'biliLook.maxDurationSec': [1, 3600],
-  'biliScroll.intervalMs': [60000, 86400000],
-  'biliScroll.maxPerDay': [1, 24],
-  'biliScroll.maxWakePerDay': [1, 24]
+  'bilibili.pages': [1, 3]
 };
 // 注意：前端的"保存"里还有几处自己的夹取（syncTtlMs ≥ 1000、maxRemarkChars 1~50 等），
 // 那是面板侧的输入约束，**服务端正规化并不夹这些** —— 别照着前端再抄一遍（抄了就等于悄悄改了行为）。

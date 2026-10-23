@@ -2,8 +2,8 @@
 //
 //   她把自己"订阅"回来了（订阅 = 那人说任何话都叫醒她）。材料里：
 //     · 【你现在的状态】只写「触发条件：atMention/nameMention/poke」——**没写她订阅了谁**；
-//     · 【这次找你的原因】直接甩内部代号「唤醒原因：speaker:群友辛」。
-//   于是她被叫醒时，看到群里正飘着「@UserA」，就以为有人在 @ 她，
+//     · 【这次找你的原因】直接甩内部代号「唤醒原因：speaker:讨厌偏头痛」。
+//   于是她被叫醒时，看到群里正飘着「@AF」，就以为有人在 @ 她，
 //   连着说"空@我一下就想跑？""再@我可要收费了""@都@上了还挂个笑脸"——群里当场"出幻觉了"。
 //
 // 结论：**唤醒 ≠ 被 @**，而材料必须把这句话说清楚。所以这里对每种原因都给一句人话，
@@ -12,7 +12,7 @@
 const NOT_CALLING = '（不是 @ 你）';
 
 /**
- * @param {string} reason 唤醒原因（内部代号，如 speaker:群友辛 / followUp / keyword:DS）
+ * @param {string} reason 唤醒原因（内部代号，如 speaker:讨厌偏头痛 / followUp / keyword:DS）
  * @returns {string} 给她看的一句话
  */
 export function wakeReasonLabel(reason) {

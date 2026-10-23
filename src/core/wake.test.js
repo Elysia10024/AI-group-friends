@@ -14,8 +14,8 @@ import {
 
 const NOW = Date.parse('2026-09-18T12:00:00+08:00');
 const GROUP_KEY = 'group:20000001';
-const SELF_ID = '10000000';
-const NICK = '竹沥半夏二号机';
+const SELF_ID = '3612473248';
+const NICK = '测试二号机';
 const ALIASES = new Set(['大隐鲸']);
 
 const ev = (over = {}) => ({
@@ -158,7 +158,7 @@ test('atMention 关掉时 @ 不再触发', () => {
 });
 
 test('名字：账号昵称优先于群名片，两者都认', () => {
-  assert.equal(reason({ textContent: '@竹沥半夏二号机 在吗', plainContent: 'x' }), 'nameMention');
+  assert.equal(reason({ textContent: '@测试二号机 在吗', plainContent: 'x' }), 'nameMention');
   assert.equal(reason({ textContent: '大隐鲸 出来', plainContent: 'x' }), 'nameMention');
   assert.equal(reason({ textContent: '今天天气好', plainContent: '今天天气好' }), null);
 });

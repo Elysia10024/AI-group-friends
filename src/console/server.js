@@ -422,9 +422,11 @@ export function startConsoleServer(deps) {
       if (await handleMemory1(ctx)) return;
       // QQ 空间说说：发表 / 删除 / 读列表（带 agent token）＋ 本地账本只读（面板用）
       if (await handleQzone1(ctx)) return;
-      // B 站（可选）：订阅配置 / 看群友分享的视频 / 空闲自刷
+      // B 站视频订阅管理（控制台专用；带 agent token 的请求在路由里拒绝）
       if (await handleBilibili(ctx)) return;
+      // 看群友分享的 B 站视频（二代工具通道；配额在域里）
       if (await handleBiliLook(ctx)) return;
+      // 她自己刷 B 站（空闲时段；频率/日上限在域里）
       if (await handleBiliScroll(ctx)) return;
       if (await handleSlang2(ctx)) return;
       if (await handleAdmin4(ctx)) return;

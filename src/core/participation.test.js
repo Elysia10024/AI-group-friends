@@ -76,7 +76,7 @@ test('真实事故复现：她占 42%、群里有 4 个人 → 必须提醒收�
 });
 
 test('只在 1v1 聊天时她占一半 → 不提醒（那不是话密）', () => {
-  const hint = overParticipationHint(st({ self: 20, senders: ['群友乙'], othersEach: 20 }).recentMessages, { now: NOW });
+  const hint = overParticipationHint(st({ self: 20, senders: ['拾圆拾圆'], othersEach: 20 }).recentMessages, { now: NOW });
   assert.equal(hint, '');
 });
 

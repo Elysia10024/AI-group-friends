@@ -13,11 +13,13 @@ import { mentionLabel } from '../core/mention-label.js';
 import { wakeReasonLine } from '../core/wake-reason-label.js';
 import { DEFAULT_MENTION_TTL_MS, fmtClock, liveMentions } from '../core/mention-window.js';
 import { relativeDayLabel } from '../core/local-day.js';
+import { displayNameForQq } from '../core/person-name.js';
 import { renderMessageLine, relationTagOf } from '../core/msg-line.js';
 import { foreignPersonLines } from '../core/person-crossref.js';
 import { buildPeopleIndex, crossGroupAliasLines } from '../core/people-index.js';
 import { moodLine } from '../core/mood.js';
 import { relationLines } from '../core/relation.js';
+import { renderMomBlock } from '../core/mom-channel.js';
 
 export function createContextShadowModule(ctx) {
   const {
@@ -31,9 +33,11 @@ export function createContextShadowModule(ctx) {
     getPeople,
     getOtherConversations,
     getOverlay,
+    getExpressionBlock,
     getRoleCore,
     getSocialV2State,
     imageLibraryIndexText,
+    isRoleplay,
     log,
     readJsonSafe,
     slangEntries,
@@ -69,17 +73,31 @@ export function createContextShadowModule(ctx) {
 
   // 跨会话人物补充：本会话消息里出现的人，如果印象记在别的会话，就搬一行过来。
   // 只在真的提到时才补（最多 3 人 × 2 条），不是无脑全塞。
+  //
+  // 记忆的 key 自 2026-10-15 起是 **QQ 号**（身份锚点），而这里要在**聊天文本里按名字找人**
+  // （`foreignPersonLines` 拿名字去 hay 里 includes）—— 所以必须先反查成名字再传进去，
+  // 否则 key 是数字、永远匹配不上，整块跨会话补料会**静默失效**（不报错、只是她又不认识人了）。
+  const impressionLabel = (impKey, im, convKey, st = null) => displayNameForQq(impKey, {
+    key: convKey,
+    people: typeof getPeople === 'function' ? getPeople() : null,
+    st,
+    fallback: im?.displayName
+  });
   const fmtForeignPersons = (st, convKey) => {
     try {
       if (typeof getOtherConversations !== 'function') return '';
-      const others = getOtherConversations(convKey) ?? [];
+      const others = (getOtherConversations(convKey) ?? []).map((c) => ({
+        key: c?.key,
+        memberImpressions: Object.fromEntries(Object.entries(c?.memberImpressions ?? {})
+          .map(([k, im]) => [impressionLabel(k, im, c?.key), im]))
+      }));
       const hay = [
         ...(Array.isArray(st?.recentMessages) ? st.recentMessages.slice(-MAX_RECENT) : []),
         ...(Array.isArray(st?.unread) ? st.unread : [])
       ].map((m) => `${m?.plain ?? m?.text ?? ''}`).join('\n');
       const out = [];
       // ① 跨群认人（按 QQ）：本会话说话的人如果在别的会话另有名字 → 明确写"是同一个人"。
-      //    这条正是"群友乙/来来"那类事故的解药：身份由 QQ 锚定，不靠名字像不像。
+      //    这条正是"拾圆拾圆/来来"那类事故的解药：身份由 QQ 锚定，不靠名字像不像。
       const index = buildPeopleIndex([{ key: convKey, recentMessages: st?.recentMessages ?? [] }, ...others]);
       const aliasLines = crossGroupAliasLines({ index, convKey, speakers: st?.recentMessages ?? [], max: 3 });
       if (aliasLines.length) out.push(`【同一个人，别的群另有名字】\n${aliasLines.join('\n')}`);
@@ -87,7 +105,8 @@ export function createContextShadowModule(ctx) {
       if (hay) {
         const lines = foreignPersonLines({
           text: hay,
-          ownNames: Object.keys(st?.memberImpressions ?? {}),
+          // 本会话已有印象的人（也要用名字，`ownNames` 内部按短名比）
+          ownNames: Object.entries(st?.memberImpressions ?? {}).map(([k, im]) => impressionLabel(k, im, convKey, st)),
           others
         });
         if (lines.length) out.push(`【别处记过的人】\n${lines.join('\n')}`);
@@ -129,7 +148,7 @@ export function createContextShadowModule(ctx) {
     const tr = wc.triggers ?? {};
     const on = ['atMention', 'nameMention', 'question', 'poke', 'anyMessage'].filter((k) => tr[k]);
     // 订阅（speakerIds）必须列出来：不写的话，她被"订阅的人说话"叫醒时会以为有人 @ 她
-    // （真实事故 2026-09-30：她看到群里飘着 @UserA，就认定是在叫她）。
+    // （真实事故 2026-09-30：她看到群里飘着 @AF，就认定是在叫她）。
     const subs = Array.isArray(tr.speakerIds) ? tr.speakerIds.filter(Boolean) : [];
     // 群号从 key 拿（状态对象里没有 key 字段 —— 踩过一次，写成 st.key 结果永远是空的）
     const gid = String(key).startsWith('group:') ? String(key).slice(6) : '';
@@ -153,6 +172,9 @@ export function createContextShadowModule(ctx) {
   /** 取当前状态、组装出一份材料（影子与 A1.1 正式投递**共用这一个实现**，避免两条路走偏）。 */
   function buildMaterialV2(key, extra = {}) {
     const st = getSocialV2State(key);
+    // 角色扮演期间：记忆、跨会话补料、关系表都不注入 —— 那是小鲸鱼的东西，角色不该继承
+    // （2026-10-19 主人要求：扮演的角色看不到小鲸鱼的记忆）。
+    const roleplay = typeof isRoleplay === 'function' && isRoleplay() === true;
     // 取一次"现在"给 recent / 未读共用：两块的相对日子用同一个基准，免得同一份材料里
     // 一个块说"昨天"、另一个块说"前天"（跨零点那一分钟真会发生）。
     const now = Date.now();
@@ -160,18 +182,23 @@ export function createContextShadowModule(ctx) {
     // 现在它只放"规则化事实"，其中第一件就是**本地图库清单**（她能发哪些图、名字即语义）：
     // 不清单化她就不知道图库里有什么，只能瞎猜名字；57 张只列名字+标签约 900 字，便宜且稳定。
     const facts = [
+      // 妈妈留言（2026-10-22）：她给妈妈留的话，妈妈回来的一两句——最显眼的位置。
+      roleplay ? '' : renderMomBlock(),
       // 会话级"地方设定"（这个群/这个私聊的氛围、熟人、规矩）放最前面：它比图库清单更"当前"。
       typeof getOverlay === 'function' ? getOverlay(key) : '',
       // 本会话提到、但印象记在**别的会话**里的人 → 补一小块（否则私聊里会出现"XXX 又是谁啊"）。
       // 关系（五档）跟 QQ 走：同一个 QQ 在任何群读到的都是同一档，但**用当前群的名字**称呼。
       (() => {
         try {
+          if (roleplay) return '';                     // 扮演期间不给她看小鲸鱼的关系表
           if (typeof getPeople !== 'function') return '';
           const lines = relationLines({ people: getPeople(), speakers: st?.recentMessages ?? [], max: 8 });
           return lines.length ? `【你和他们的关系】\n${lines.join('\n')}` : '';
         } catch { return ''; }
       })(),
-      fmtForeignPersons(st, key),
+      roleplay ? '' : fmtForeignPersons(st, key),
+      // 表达方式（「场景 → 怎么说」）：只给这个群确认过的，最多 3 条；扮演期间不给。
+      roleplay ? '' : (typeof getExpressionBlock === 'function' ? getExpressionBlock(key) : ''),
       typeof imageLibraryIndexText === 'function' ? imageLibraryIndexText() : ''
     ].filter(Boolean).join('\n\n');
     const trigger = [
@@ -189,7 +216,7 @@ export function createContextShadowModule(ctx) {
       // 以前只有预设里那份"小抄"每轮在，人格卡要她自己去 qq_get_prompt 拉，实测经常整轮不拉。
       role: typeof getRoleCore === 'function' ? getRoleCore() : '',
       facts,
-      memory: formatMemoryV2(st),
+      memory: roleplay ? '' : formatMemoryV2(st, key),
       slang: buildSlangContext(slangEntries, cfg.slang?.injectMax ?? 8, slangHaystack),
       status: fmtStatus(st, key),
       recent: fmtRecent(st.recentMessages, now),

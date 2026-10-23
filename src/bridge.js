@@ -105,6 +105,7 @@ const STATE_DIR = path.join(ROOT, 'state');
 const STATE_FILE = path.join(STATE_DIR, 'sessions.json');
 const ROLE_STATE_FILE = path.join(STATE_DIR, 'current-role.json');
 const SLANG_FILE = path.join(STATE_DIR, 'slang.json');
+const EXPRESSION_FILE = path.join(STATE_DIR, 'expressions.json');
 const SLANG_SESSION_FILE = path.join(STATE_DIR, 'slang-session.json');
 const SOCIAL_V2_FILE = path.join(STATE_DIR, 'social-v2.json');
 const CONTEXT_SHADOW_FILE = path.join(STATE_DIR, 'context-shadow.json');   // A1.0 影子组装留档（只读旁路）
@@ -238,6 +239,13 @@ async function main() {
 
   // ── 群聊黑话/网络用语学习（slang） ──────────────────────────────────────
   let slangEntries = loadSlang(SLANG_FILE);
+  // 表达方式库（「什么场景 → 怎么说」）：手动学习、审核后注入材料。和黑话分开存。
+  let expressions = (() => {
+    try {
+      const v = readJsonSafe(EXPRESSION_FILE, []);
+      return Array.isArray(v) ? v : [];
+    } catch { return []; }
+  })();
   const slangWindows = new Map();       // key -> [{sender,text,time}]：待学习消息窗口
   const slangExtractionCooldowns = new Map(); // key -> timestamp
   const slangSubmitTimes = new Map();   // key -> [timestamp]：AI 提交黑话候选限频（内存态）
@@ -253,7 +261,7 @@ async function main() {
   let stickerEntries = loadStickerStore(STICKER_FILE);
   let stickerSyncedAt = 0; // 上次从 SnowLuma 拉取收藏表情的时间戳（毫秒）
   let lastForcedAgentStickerSync = 0; // AI 强制刷新表情库的最小间隔保护
-  // 本地图库（<项目目录>\image）：管理员自己命名的梗图，按语境发。
+  // 本地图库（<项目根>\image）：管理员自己命名的梗图，按语境发。
   // 与表情包模块并列，但真相源是本地文件夹 + library.json（改完下一轮生效，不用重启）。
   const imageLibraryMod = createImageLibraryModule({
     ROOT,
@@ -346,6 +354,7 @@ async function main() {
     status: qzoneStatus,
   } = qzoneMod;
   const slangMod = createSlangModule({
+    EXPRESSION_FILE,
     SLANG_FILE,
     SLANG_SESSION_FILE,
     SLANG_STATUS,
@@ -381,6 +390,11 @@ async function main() {
     set slangLearnerSessionId(v) { slangLearnerSessionId = v; },
     get slangTaskChain() { return slangTaskChain; },
     set slangTaskChain(v) { slangTaskChain = v; },
+    get expressions() { return expressions; },
+    set expressions(v) { expressions = v; },
+    // 表达提取的兜底：学习窗口是内存态（重启就空），手动触发时可以退回该会话最近的群聊记录。
+    // socialV2 在下面才定义，这里用 getter 延迟取值，避免 TDZ。
+    get socialV2() { return socialV2; },
   });
   const {
     saveSlangStore,
@@ -396,6 +410,11 @@ async function main() {
     publicSlangEntry,
     confirmedSlangListV2,
     withSlangContext,
+    runExpressionExtraction,
+    listExpressions,
+    setExpressionStatus,
+    deleteExpressionById,
+    expressionContextFor,
   } = slangMod;
   if (!cfg.allow.private.length && !cfg.allow.groups.length && cfg.allowAllWhenEmpty) {
     log('⚠️  白名单为空且 allowAllWhenEmpty=true：将转发所有私聊/群聊消息给 agent');
@@ -492,6 +511,8 @@ async function main() {
     set selfNickname(v) { selfNickname = v; },
     get selfUserId() { return selfUserId; },
     set selfUserId(v) { selfUserId = v; },
+    // 扮演时换预设（qq-roleplay：不带小鲸鱼速记/群三水设定），见 mode.js modePreset。
+    get isRoleplaying() { return isPlayingRole; },
   });
   const {
     refreshMode,
@@ -787,6 +808,7 @@ async function main() {
     getPeople,
     setPersonRelation,
     setPersonTag,
+    reloadMemory,
   } = socialStateMod;
   // A1.0 影子组装（只读旁路）：照常走长会话，另外留一份"新方案会给她看什么"。
   // 设计见 docs/上下文组装设计.md；开关在 cfg.socialV2.context.assembler。
@@ -799,6 +821,8 @@ async function main() {
     cfg,
     formatMemoryV2,
     getSocialV2State,
+    // 表达方式块（「场景 → 怎么说」，手动学习+审核后的）。拼进 facts，不进独立块。
+    getExpressionBlock: (key) => expressionContextFor(key, 3),
     // 群成员名（同步、惰性）：材料里"你订阅了 XXX"要写人名而不是 QQ 号——
     // 只写 QQ 她认不出是谁，被叫醒时就容易以为有人在 @ 她（真实事故）。
     // 注意用 thunk：groupMemberNameCache 在角色域（下面才构造）里，这里传引用会拿到 undefined。
@@ -807,13 +831,21 @@ async function main() {
       return String(hit?.name ?? '');
     },
     // 人格核心（roles/<角色>/core.md）：放进材料最前面的稳定块，每轮都在。
-    getRoleCore: () => currentRoleHint(),
+    // 退出角色扮演后的 12 小时内，最前面再补一句"你刚才在扮演 X"（见 roleSwitchNote）。
+    getRoleCore: () => {
+      const core = currentRoleHint();
+      const note = roleSwitchNote();
+      return note ? `${note}\n\n${core}` : core;
+    },
+    // 角色扮演期间：材料里不注入记忆/关系/心情（角色不该继承小鲸鱼的东西）
+    isRoleplay: () => isPlayingRole(),
     // 心情（全局、跨群）：在别的群受的影响这里也带着 —— 渲染时不写别的群的名字。
-    getMood: () => getMood(),
+    // 角色扮演期间不给她看心情：那是小鲸鱼的状态，不该被扮演的角色继承（2026-10-19）。
+    getMood: () => (isPlayingRole() ? null : getMood()),
     // 人物表（全局，按 QQ）：关系五档跟人走 —— 材料里用它写【你和他们的关系】。
     getPeople: () => getPeople(),
     // 别的会话里记过的人物印象（只读、跨会话补料）：本会话提到"别处记过的人"时补一行。
-    // 真实事故：三水在私聊里提"群友乙"，她回"群友乙又是谁啊"——人物印象是按会话存的。
+    // 真实事故：三水在私聊里提"拾圆拾圆"，她回"拾圆拾圆又是谁啊"——人物印象是按会话存的。
     // 注意必须走 socialStateMod 的快照（bridge 的 state 对象里没有 conversations，写错过一次）。
     getOtherConversations: (exceptKey) => allConversationSnapshots(exceptKey),
     // 这个会话的"地方设定"（roles/<角色>/groups|private/<id>.md）——
@@ -951,6 +983,37 @@ async function main() {
     }
   }
 
+  // 角色扮演切换提示：切回小鲸鱼之后的一小段时间里，材料最前面提醒一句「刚才那段是扮演」。
+  // 记忆里带 [扮演:角色] 标记的条目也是那个角色说的，不是她（2026-10-19 主人要求：
+  // 扮演说的话不能污染小鲸鱼，并且要让她知道刚才在演）。
+  // 窗口只有 2 小时：24 小时会让它变成背景噪音，还可能让她把切回后的话也当成扮演。
+  // 过了窗口，记忆里的 [扮演:X] 标记仍然是唯一凭据。
+  const ROLE_SWITCH_NOTE_TTL_MS = 2 * 3600 * 1000;
+  // 当前是不是在扮演别人（≠ 小鲸鱼）。记忆/心情隔离和切回提示都靠它。
+  function isPlayingRole() {
+    try {
+      const rs = readRoleState();
+      const r = String(rs?.role ?? '').trim();
+      return Boolean(r && r !== '小鲸鱼');
+    } catch {
+      return false;
+    }
+  }
+  function roleSwitchNote() {
+    try {
+      const rs = readRoleState();
+      const prev = String(rs?.previous ?? '');
+      const at = Number(rs?.switchedAt) || 0;
+      if (!prev || prev === '小鲸鱼') return '';
+      if (!(at > 0) || Date.now() - at > ROLE_SWITCH_NOTE_TTL_MS) return '';
+      const cur = String(rs?.role ?? '');
+      if (cur && cur !== '小鲸鱼') return '';   // 还在扮演，不用提示
+      return `【刚才】你刚才在扮演「${prev}」。只有记忆里带 [扮演:${prev}] 标记的条目是那个角色说的，不是你的话；除此之外（包括你从现在起说的每一句）都是你自己。要是有人问你怎么还带着刚才那个口气，就说「刚才演得太入戏了，还没缓过来」，一句带过，不用细说。不用向谁解释这件事。`;
+    } catch {
+      return '';
+    }
+  }
+
   // 会话级"地方设定"：group:<群号> → roles/<角色>/groups/<群号>.md；private:<QQ> → roles/<角色>/private/<QQ>.md。
   // 为什么要按会话拆：人格是同一个（core.md），但每个群的氛围、熟人、规矩不一样；
   // 拆开之后改 A 群不会碰到 B 群，也不会碰到人格层（单一真相源）。
@@ -1058,6 +1121,8 @@ async function main() {
     redPacketStateV2,
     clearRedPacketV2,
   } = redPacketStateMod;
+  // B 站订阅模块在启动区才构造；这里先占名字，唤醒提示那行通过闭包延迟取（避免 TDZ）。
+  let bilibiliMod = null;
   const wakeMod = createWakeModule({
     armFollowUpV2,
     armPendingWakeLease,
@@ -1080,6 +1145,8 @@ async function main() {
     promptQueues,
     // 「说说」那一行事实（今天发过几条 / 上一条是什么 / 现在能不能发）—— 唤醒提示里要用。
     qzonePromptText,
+    // B 站订阅那一行（关注了谁 + 最近播报）：播报是桥接直接发的，她不知道；给一行事实。
+    biliPromptText: () => (bilibiliMod ? bilibiliMod.promptText() : ''),
     // 「你的说说下面有人评论了」那段（读一次就清，只在 qzoneComment 那次唤醒里取）。
     takeQzoneCommentNotice: takeCommentNotice,
     readRoleState,
@@ -1437,8 +1504,9 @@ async function main() {
       await sendWakePromptV2(key, 'qzoneComment');
     },
   });
-  // B 站订阅播报（可选）：只读轮询投稿视频，新款直接发群（不花模型钱）。
-  const bilibiliMod = createBilibiliModule({
+  // B 站订阅播报：只读 HTTP 轮询投稿视频，有新款直接发群（不叫醒她、不花模型钱）。
+  // 边界见 src/domains/bilibili.js 顶部注释；配置在 config.json 的 bilibili 段。
+  bilibiliMod = createBilibiliModule({
     cfg,
     log,
     onebotSend,
@@ -1448,7 +1516,7 @@ async function main() {
     sleep,
   });
   bilibiliMod.startBilibiliWatch();
-  // 看群友分享的 B 站视频（可选）：配额与分享者判定都在桥接侧。
+  // 看群友分享的 B 站视频：配额（每人每天一次）与分享者判定都在桥接侧。
   const biliLookMod = createBiliLookModule({
     cfg,
     log,
@@ -1457,7 +1525,7 @@ async function main() {
     atomicWriteJson,
     getSocialV2State,
   });
-  // 空闲时段自己刷（可选）：groupKey 留空时落到 allow.groups[0]。
+  // 空闲时段自己刷 B 站：每小时最多叫醒一次；真正看视频走 qq_bili_scroll（配额在域里）。
   const biliScrollMod = createBiliScrollModule({
     cfg,
     log,
@@ -1466,12 +1534,9 @@ async function main() {
     atomicWriteJson,
     biliLook: biliLookMod,
   });
-  const scrollGroup = String(cfg.biliScroll?.groupKey || cfg.allow?.groups?.[0] || '');
-  if (scrollGroup) {
-    biliScrollMod.start({ onWake: () => sendWakePromptV2(scrollGroup, 'biliScroll') });
-  } else {
-    log('[bili-scroll] 未配置 groupKey 且 allow.groups 为空，跳过启动');
-  }
+  biliScrollMod.start({
+    onWake: () => sendWakePromptV2(String(cfg.biliScroll?.groupKey || 'group:20000001'), 'biliScroll'),
+  });
   startConsoleServer({
     cfg,
     bilibili: bilibiliMod,
@@ -1497,6 +1562,7 @@ async function main() {
     getPeople,
     setPersonRelation,
     setPersonTag,
+    reloadMemory,
     readRoleState,
     recordSentMessagesV2,
     redactKnownTokensOnly,
@@ -1544,6 +1610,10 @@ async function main() {
     computeGapsV2,
     confirmedSlangListV2,
     createSlangEntry,
+    deleteExpressionById,
+    listExpressions,
+    runExpressionExtraction,
+    setExpressionStatus,
     feedbackTimes,
     fetchMediaData,
     findCjkSpaceWarning,

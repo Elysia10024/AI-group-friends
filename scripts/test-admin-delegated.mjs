@@ -16,9 +16,9 @@ import { createIdsModule } from '../src/ids.js';
 
 const CFG = {
   ownerQQ: '10000001',
-  allow: { private: ['10000001'], groups: ['20000003', '20000001'] },
+  allow: { private: ['10000001'], groups: ['20000002', '20000001'] },
   deny: { private: [], groups: [] },
-  groupAdmins: { 20000003: ['2669073185'] },
+  groupAdmins: { 20000002: ['10000005'] },
 };
 
 let failures = 0;
@@ -36,9 +36,10 @@ function harness() {
     return states.get(key);
   };
   const mod = createAdminCommandsModule({
-    ROOT: 'E:\\ai群友\\qq-bridge-main',
+    ROOT: process.cwd(),
     ctx: { sessionEpoch: 0 },
     fs: { existsSync: () => false },
+    path,
     getSocialV2State,
     groupMemberNameCache: new Map(),
     log: (...a) => logs.push(a.join(' ')),
@@ -66,8 +67,8 @@ async function check(name, fn) {
   }
 }
 
-const GKEY = 'group:20000003';
-const ADMIN = '2669073185';
+const GKEY = 'group:20000002';
+const ADMIN = '10000005';
 const STRANGER = '10001';
 const OWNER = '10000001';
 
@@ -75,17 +76,17 @@ console.log('\n=== 委派群管理员 · 接线回归 ===\n');
 
 await check('群里 /安静：关的是这个群，回执发在群里', async () => {
   const h = harness();
-  const handled = await h.run(CFG, '20000003', false, GKEY, 'group', '/安静', { role: '小鲸鱼', mode: 'active' }, true, ADMIN);
+  const handled = await h.run(CFG, '20000002', false, GKEY, 'group', '/安静', { role: '小鲸鱼', mode: 'active' }, true, ADMIN);
   assert.equal(handled, true, '应该被管家接管');
   assert.equal(h.state(GKEY).muted, true, '群应该被静音');
   assert.equal(h.out.at(-1)?.key, GKEY, '回执应该发在群里');
-  assert.match(h.logs.join('\n'), /委派管理员 2669073185.*quiet/, '日志要写清是谁、执行的哪条');
+  assert.match(h.logs.join('\n'), /委派管理员 10000005.*quiet/, '日志要写清是谁、执行的哪条');
 });
 
 await check('群里 /恢复：能把自己关掉的群开回来（不能是单向陷阱）', async () => {
   const h = harness();
   h.state(GKEY).muted = true;
-  const handled = await h.run(CFG, '20000003', false, GKEY, 'group', '/恢复', { role: '小鲸鱼', mode: 'active' }, true, ADMIN);
+  const handled = await h.run(CFG, '20000002', false, GKEY, 'group', '/恢复', { role: '小鲸鱼', mode: 'active' }, true, ADMIN);
   assert.equal(handled, true);
   assert.equal(h.state(GKEY).muted, false, '群应该恢复');
   assert.doesNotMatch(h.out.at(-1).text, /用法：\/订阅/, '不能掉进订阅分支');
@@ -93,7 +94,7 @@ await check('群里 /恢复：能把自己关掉的群开回来（不能是单�
 
 await check('群里 /role off：委派管理员拿不到 owner 权限', async () => {
   const h = harness();
-  const handled = await h.run(CFG, '20000003', false, GKEY, 'group', '/role off', { role: '小鲸鱼', mode: 'active' }, true, ADMIN);
+  const handled = await h.run(CFG, '20000002', false, GKEY, 'group', '/role off', { role: '小鲸鱼', mode: 'active' }, true, ADMIN);
   assert.equal(handled, true);
   assert.equal(h.roleWrites.length, 0, '不许改角色');
   assert.match(h.out.at(-1).text, /只有主人/);
@@ -101,14 +102,14 @@ await check('群里 /role off：委派管理员拿不到 owner 权限', async ()
 
 await check('非管理员在群里 /安静：被拒，且群里没被静音', async () => {
   const h = harness();
-  await h.run(CFG, '20000003', false, GKEY, 'group', '/安静', { role: '小鲸鱼', mode: 'active' }, true, STRANGER);
+  await h.run(CFG, '20000002', false, GKEY, 'group', '/安静', { role: '小鲸鱼', mode: 'active' }, true, STRANGER);
   assert.equal(h.state(GKEY).muted, false);
   assert.match(h.out.at(-1).text, /不是被授权的群管理员/);
 });
 
 await check('主人 /安静：照常生效（抓 log/idLabel 那类未定义引用）', async () => {
   const h = harness();
-  const handled = await h.run(CFG, '20000003', true, GKEY, 'group', '/安静', { role: '小鲸鱼', mode: 'active' }, true, OWNER);
+  const handled = await h.run(CFG, '20000002', true, GKEY, 'group', '/安静', { role: '小鲸鱼', mode: 'active' }, true, OWNER);
   assert.equal(handled, true);
   assert.equal(h.state(GKEY).muted, true);
 });
@@ -126,16 +127,16 @@ await check('私聊 /安静 20000001：拒绝（不是他管的群）', async ()
   assert.match(h.out.at(-1).text, /不归你管/);
 });
 
-await check('私聊 /安静 20000003：关他那个群，回执回私聊', async () => {
+await check('私聊 /安静 20000002：关他那个群，回执回私聊', async () => {
   const h = harness();
-  await h.run(CFG, ADMIN, false, `private:${ADMIN}`, 'private', '/安静 20000003', { role: '小鲸鱼', mode: 'active' }, false, ADMIN);
+  await h.run(CFG, ADMIN, false, `private:${ADMIN}`, 'private', '/安静 20000002', { role: '小鲸鱼', mode: 'active' }, false, ADMIN);
   assert.equal(h.state(GKEY).muted, true);
   assert.equal(h.out.at(-1).key, `private:${ADMIN}`, '回执不该发到群里');
 });
 
 await check('群里的自然语言（没点名）：不接管，交给模型当闲聊', async () => {
   const h = harness();
-  const handled = await h.run(CFG, '20000003', false, GKEY, 'group', '这个群安静一下', { role: '小鲸鱼', mode: 'active' }, false, ADMIN);
+  const handled = await h.run(CFG, '20000002', false, GKEY, 'group', '这个群安静一下', { role: '小鲸鱼', mode: 'active' }, false, ADMIN);
   assert.equal(handled, false);
   assert.equal(h.state(GKEY).muted, false);
 });
@@ -167,7 +168,7 @@ const modeMod = createModeModule({
 await check('准入：被委派的管理员私聊能进（完整私聊），陌生人不能', async () => {
   assert.equal(modeMod.modeAllowed(`private:${ADMIN}`, 'private', ADMIN, CFG, 'reserved2'), true);
   assert.equal(modeMod.modeAllowed('private:99999', 'private', '99999', CFG, 'reserved2'), false, '没授权的人私聊照样被丢掉');
-  assert.equal(modeMod.modeAllowed(GKEY, 'group', '20000003', CFG, 'reserved2'), true, '白名单群照常');
+  assert.equal(modeMod.modeAllowed(GKEY, 'group', '20000002', CFG, 'reserved2'), true, '白名单群照常');
 });
 
 await check('准入：从名单里删掉 = 私聊立刻回到未授权（fail-closed）', async () => {

@@ -106,6 +106,15 @@ export const SECTIONS = [
     render: (ctx) => ctx.qzoneText || ''
   },
   {
+    id: 'bili',
+    static: false,
+    // 【B站订阅】那一行：关注了哪些官号、最近播报了什么。
+    // 为什么要有：播报是桥接直接发群的，**没进过她的上下文** —— 群里有人问
+    // 「你关注的那几个游戏有新动态吗」，她只能瞎猜。给一行事实，答得准，也只花几十 token。
+    // 关掉订阅 / 没有订阅时桥侧传空串，这一轮就不出现。
+    render: (ctx) => ctx.biliText || ''
+  },
+  {
     id: 'status',
     static: false,
     render: (ctx) => {
@@ -254,6 +263,13 @@ function renderReasonTail(ctx, scope) {
       + `**没有想说的、看不懂、或者话题已经过去了，就安静收尾**（qq_set_wake_config）——这次机会不发言完全没有问题；为了不浪费机会硬凑一句，比不说话更像机器人。\n`
       + `别连发好几条、别"报到"式地冒个泡，也别把好几分钟前的话当成现在的话来回。`;
   }
+  if (reason === 'biliScroll') {
+    // 空闲时段（低价）自己刷视频：桥接只给"可以刷了"的由头，看不看、说什么都归她。
+    return `【空闲时间】${key}\n原因：现在是梁文谷的空闲时段（价格低谷），桥接给你一次"自己去刷会儿 B 站"的机会。\n`
+      + `【怎么做】想刷就调用 qq_bili_scroll 挑一个 5 分钟以内的短视频看看：它会返回标题/简介、按热度前 5 条评论，还有每 2 秒一张的截图（你能直接看到画面）。\n`
+      + `看完想说什么就在群里自然说一句（视频本身有意思的点、评论区在聊什么）；**不想说、没看到感兴趣的，就安静收尾**——这次机会不发言完全没问题，别为了刷而刷、也别硬凑一句。\n`
+      + `看完想记一笔就用 qq_memory_append 记成 activeTopic 或 pendingThought；别一天刷好几次，桥接会控制频率。`;
+  }
   if (reason === 'redPacket') {
     const rp = ctx.redPacket || { kind: 'fake', text: '' };
     const styleHint = groupStyleHint(scope.ctxSlice);
@@ -297,6 +313,8 @@ function renderReasonTail(ctx, scope) {
  * @param {string} ctx.memoryText     已渲染好的记忆段（空串=不注入）
  * @param {string} ctx.participationText 已渲染好的参与度段
  * @param {string} ctx.stickerText    已渲染好的表情策略段（含末尾空行；空串=不注入）
+ * @param {string} ctx.qzoneText   已渲染好的「说说」事实行（空串=不注入）
+ * @param {string} ctx.biliText    已渲染好的「B站订阅」事实行（空串=不注入）
  * @param {number} ctx.inlineMax      最多内联多少条群聊
  * @param {number} ctx.preSleepMs     replyCheck 结尾里引用的沉睡等待时长
  * @param {null|{kind:string,greeting?:string,isDefaultGreeting?:boolean,text?:string}} ctx.redPacket

@@ -21,7 +21,7 @@
 // 隐藏时钟**（random 缺省那一次是唯一的例外，见下），否则只能靠等真实时间来测。
 
 export const DENSITY_DEFAULTS = {
-  enabled: true,
+  enabled: false,   // 2026-10-16 关掉：主人要求"她只在被叫到时才说话"（与 proactive 一致）
   windowMs: 10 * 60 * 1000,     // 观察窗口：最近 10 分钟
   minMessages: 25,              // 窗口内至少这么多条消息才算"热闹"
   cooldownMs: 30 * 60 * 1000,   // 触发一次后至少隔这么久才能再触发

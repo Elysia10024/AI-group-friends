@@ -26,8 +26,8 @@ import {
   blankCode, matchBraces, declaredInside, countRefs, collectIdentifiers
 } from './split-console.mjs';
 
-const SERVER = '<项目目录>/qq-bridge-main/src/console/server.js';
-const ROUTE_DIR = '<项目目录>/qq-bridge-main/src/console/routes';
+const SERVER = '<项目根>/src/console/server.js';
+const ROUTE_DIR = '<项目根>/src/console/routes';
 const DRY = process.argv.includes('--dry');
 
 // ---------------------------------------------------------------- 域划分

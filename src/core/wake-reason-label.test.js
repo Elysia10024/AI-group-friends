@@ -4,8 +4,8 @@ import assert from 'node:assert/strict';
 import { wakeReasonLabel, wakeReasonLine } from './wake-reason-label.js';
 
 test('订阅唤醒必须写清"不是 @ 你"（那次幻觉的根因）', () => {
-  const t = wakeReasonLabel('speaker:群友辛');
-  assert.match(t, /你订阅的「群友辛」/);
+  const t = wakeReasonLabel('speaker:讨厌偏头痛');
+  assert.match(t, /你订阅的「讨厌偏头痛」/);
   assert.match(t, /不是 @ 你/);
 });
 

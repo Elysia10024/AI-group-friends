@@ -9,9 +9,11 @@ import { matchAdminCommand, isSlashCommand, isCommandAddressed, ADMIN_COMMANDS }
 
 test('斜杠写法全部保留（与改造前行为一致）', () => {
   const slash = {
+    '/': 'help', '/help': 'help', '/帮助': 'help',
     '/reset': 'reset', '/new': 'reset',
     '/status': 'status',
     '/role': 'role',
+    '/roles': 'roles',
     '/silent': 'silent', '/quiet': 'silent',
     '/active': 'active', '/speak': 'active',
   };
@@ -38,31 +40,49 @@ test('自然语言写法：重置 / 状态', () => {
   }
 });
 
-test('带参数的指令：角色名取得到（斜杠与自然语言两种写法）', () => {
+test('带参数的指令：/role 取角色名', () => {
   assert.equal(matchAdminCommand('/role 小鲸鱼')?.arg, '小鲸鱼');
   assert.equal(matchAdminCommand('/role')?.arg, '');
-  assert.equal(matchAdminCommand('切换角色到 傲娇助手')?.arg, '傲娇助手');
-  assert.equal(matchAdminCommand('换个角色 小鲸鱼.速记')?.arg, '小鲸鱼.速记');
-  assert.equal(matchAdminCommand('设置角色为 off')?.arg, 'off');
+  assert.equal(matchAdminCommand('/role off')?.arg, 'off');
+  assert.equal(matchAdminCommand('/角色 爱弥斯')?.arg, '爱弥斯');
+});
+
+test('角色扮演：只认 / 指令（自然语言已停用）', () => {
+  assert.equal(matchAdminCommand('/role 爱弥斯')?.id, 'role');
+  assert.equal(matchAdminCommand('/role 爱弥斯')?.arg, '爱弥斯');
+  assert.equal(matchAdminCommand('/role off')?.arg, 'off');
+  assert.equal(matchAdminCommand('/roles')?.id, 'roles');
+  assert.equal(matchAdminCommand('/角色列表')?.id, 'roles');
+  // 2026-10-19 主人要求：角色扮演不再走自然语言，避免误触发
+  assert.equal(matchAdminCommand('进入角色扮演：爱弥斯'), null);
+  assert.equal(matchAdminCommand('角色扮演：爱弥斯'), null);
+  assert.equal(matchAdminCommand('退出角色扮演'), null);
+  assert.equal(matchAdminCommand('切换角色扮演：大肥鱼群友'), null);
 });
 
 test('订阅类指令：斜杠 + 自然语言两种写法，参数原样带出', () => {
-  assert.equal(matchAdminCommand('/订阅 20000001 群友辛')?.id, 'subscribe');
-  assert.equal(matchAdminCommand('/订阅 20000001 群友辛')?.arg, '20000001 群友辛');
+  assert.equal(matchAdminCommand('/订阅 20000001 讨厌偏头痛')?.id, 'subscribe');
+  assert.equal(matchAdminCommand('/订阅 20000001 讨厌偏头痛')?.arg, '20000001 讨厌偏头痛');
   assert.equal(matchAdminCommand('/subscribe 2815316979')?.id, 'subscribe');
   assert.equal(matchAdminCommand('/subscribe 2815316979')?.arg, '2815316979');
-  assert.equal(matchAdminCommand('订阅一下 群友辛')?.id, 'subscribe');
-  assert.equal(matchAdminCommand('订阅一下 群友辛')?.arg, '群友辛');
-  assert.equal(matchAdminCommand('把群友辛订阅上')?.arg, '群友辛');
-  assert.equal(matchAdminCommand('/取消订阅 群友辛')?.id, 'unsubscribe');
-  assert.equal(matchAdminCommand('/取消订阅 群友辛')?.arg, '群友辛');
+  assert.equal(matchAdminCommand('订阅一下 讨厌偏头痛')?.id, 'subscribe');
+  assert.equal(matchAdminCommand('订阅一下 讨厌偏头痛')?.arg, '讨厌偏头痛');
+  assert.equal(matchAdminCommand('把讨厌偏头痛订阅上')?.arg, '讨厌偏头痛');
+  assert.equal(matchAdminCommand('/取消订阅 讨厌偏头痛')?.id, 'unsubscribe');
+  assert.equal(matchAdminCommand('/取消订阅 讨厌偏头痛')?.arg, '讨厌偏头痛');
   assert.equal(matchAdminCommand('取消订阅 全部')?.arg, '全部');
-  assert.equal(matchAdminCommand('把 群友辛 退订了')?.id, 'unsubscribe');
+  assert.equal(matchAdminCommand('把 讨厌偏头痛 退订了')?.id, 'unsubscribe');
   assert.equal(matchAdminCommand('/订阅列表')?.id, 'subscribe-list');
   assert.equal(matchAdminCommand('看订阅列表')?.id, 'subscribe-list');
   // 整句锚定：随口提到不该触发
   assert.equal(matchAdminCommand('我订阅了那个频道'), null, '不是整句指令就不认');
   assert.equal(matchAdminCommand('群里谁在订阅她啊'), null);
+  // 2026-10-23 事故：群里 @ 她问「你关注的那几个游戏有新动态吗」，被 LEAD 的「你」+「关注」
+  // 拆成「订阅 的那几个游戏有新动态吗」，桥直接回了订阅提示，没进模型。
+  assert.equal(matchAdminCommand('你关注的那几个游戏有新动态吗'), null, '问句不能被当成订阅指令');
+  assert.equal(matchAdminCommand('你关注的那几个游戏有新动态吗？'), null);
+  assert.equal(matchAdminCommand('关注 小明')?.id, 'subscribe', '正常用法不能误伤');
+  assert.equal(matchAdminCommand('帮我关注一下 小明')?.arg, '小明');
 });
 
 test('群里 @她 下的指令要能匹配（@段渲染成 "@名字" 顶在句首）', () => {
@@ -72,7 +92,7 @@ test('群里 @她 下的指令要能匹配（@段渲染成 "@名字" 顶在句�
   assert.equal(matchAdminCommand('@大隐鲸 开启聊天功能')?.id, 'active');
   assert.equal(matchAdminCommand('@大隐鲸 重置会话')?.id, 'reset');
   assert.equal(matchAdminCommand('@大隐鲸 状态')?.id, 'status');
-  assert.equal(matchAdminCommand('@大隐鲸 切换角色到 傲娇助手')?.arg, '傲娇助手');
+  assert.equal(matchAdminCommand('@大隐鲸 切换角色到 傲娇助手'), null, '角色扮演已改成 / 指令');
   // 但剔掉 @ 之后仍然要整句锚定 —— 不能退化成子串匹配
   assert.equal(matchAdminCommand('@大隐鲸 关闭聊天功能和开启聊天功能两个指令'), null);
   assert.equal(matchAdminCommand('@小明 你觉得该不该关闭聊天功能'), null, '剔掉 @小明 后剩下的不是整句指令');

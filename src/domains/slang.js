@@ -10,8 +10,19 @@
 //
 // 正文与搬迁前**逐字相同**，只有上述 29 处裸名字被改写成 `ctx.X`；
 // 搬迁时用"逆变换逐字还原原文"证明过这一点。
+import {
+  EXPRESSION_STATUS,
+  buildExpressionContext,
+  buildExpressionPrompt,
+  createExpression,
+  filterExpressions,
+  findDuplicateExpression,
+  parseExpressionJson,
+} from '../core/expressions.js';
+
 export function createSlangModule(ctx) {
   const {
+    EXPRESSION_FILE,
     SLANG_FILE,
     SLANG_SESSION_FILE,
     SLANG_STATUS,
@@ -42,6 +53,91 @@ export function createSlangModule(ctx) {
 
   function saveSlangStore() {
     try { saveSlang(SLANG_FILE, ctx.slangEntries); } catch (error) { log('保存黑话库失败:', error?.message ?? error); }
+  }
+
+  // ── 表达方式（「什么场景 → 怎么说」）──────────────────────────────
+  // 复用黑话学习会话：同一个 learner session、同一条任务链（串行，不抢）。
+  // 和黑话的区别：这里不自动跑，只由控制台手动触发一次（每次提取是一次模型调用）。
+  function saveExpressionStore() {
+    try { atomicWriteJson(EXPRESSION_FILE, ctx.expressions || []); } catch (error) { log('保存表达库失败:', error?.message ?? error); }
+  }
+
+  async function runExpressionExtraction(key) {
+    if (!ctx.dshReady) return { ok: false, error: 'DSH 未就绪' };
+    let messages = (slangWindows.get(key) ?? []).slice(-40);
+    if (messages.length < 3) {
+      // 学习窗口是内存态，桥重启后是空的 —— 退回该会话最近的群聊记录（手动触发时才走这里）。
+      try {
+        const st = ctx.socialV2?.conversations?.get(key);
+        const recent = Array.isArray(st?.recentMessages) ? st.recentMessages.slice(-40) : [];
+        messages = recent.map((m) => ({
+          sender: String(m.sender ?? '未知'),
+          text: String(m.plain ?? m.text ?? ''),
+          time: m.time,
+          isSelf: m.isSelf === true,
+        })).filter((m) => m.text);
+      } catch { /* 兜底失败就按消息太少处理 */ }
+    }
+    if (messages.length < 3) return { ok: false, error: '这个会话可学的消息太少（至少 3 条）' };
+    let sessionId;
+    try {
+      if (cfg.slang?.freshSession !== false) invalidateSlangLearnerSession();
+      sessionId = await ensureSlangLearnerSession();
+    } catch (error) {
+      return { ok: false, error: `学习会话创建失败：${error?.message ?? error}` };
+    }
+    const promptText = buildExpressionPrompt(messages);
+    try {
+      const accepted = await ctx.api.sessions.prompt({ sessionId, mode: 'queue', content: [{ type: 'text', text: promptText }] });
+      if (!accepted.result.ok) {
+        return { ok: false, error: `${accepted.result.error.code}: ${accepted.result.error.message}` };
+      }
+      const output = await waitLearnerTurn(sessionId, 120000);
+      const items = parseExpressionJson(output);
+      const filtered = filterExpressions(items, messages);
+      let added = 0;
+      for (const f of filtered) {
+        if (findDuplicateExpression(ctx.expressions, { ...f, sessionKey: key })) continue;
+        ctx.expressions.push(createExpression({ ...f, sessionKey: key }));
+        added += 1;
+      }
+      if (added) saveExpressionStore();
+      log(`表达提取：${key} 模型给 ${items.length} 条，过滤后入库 ${added} 条`);
+      return { ok: true, model: items.length, added };
+    } catch (error) {
+      log(`表达提取失败 (${key}):`, error?.message ?? error);
+      return { ok: false, error: String(error?.message ?? error) };
+    }
+  }
+
+  function listExpressions({ status = '', sessionKey = '' } = {}) {
+    return (ctx.expressions || []).filter((e) =>
+      (!status || e.status === status) && (!sessionKey || e.sessionKey === sessionKey));
+  }
+
+  function setExpressionStatus(id, status) {
+    const entry = (ctx.expressions || []).find((e) => e.id === id);
+    if (!entry) return null;
+    entry.status = status;
+    entry.updatedAt = new Date().toISOString();
+    saveExpressionStore();
+    return entry;
+  }
+
+  function deleteExpressionById(id) {
+    const before = (ctx.expressions || []).length;
+    ctx.expressions = (ctx.expressions || []).filter((e) => e.id !== id);
+    if (ctx.expressions.length === before) return false;
+    saveExpressionStore();
+    return true;
+  }
+
+  function expressionContextFor(sessionKey, max = 3) {
+    try {
+      return buildExpressionContext(ctx.expressions, sessionKey, max);
+    } catch {
+      return '';
+    }
   }
 
   function queueSlangTask(fn) {
@@ -266,7 +362,7 @@ export function createSlangModule(ctx) {
 
   // 黑话学习素材入口：群聊普通消息进入滚动窗口（命令/角色控制语不学；
   // 只学当前消息自己的文字，不学引用原文）。一代/二代共用。
-  function feedSlangWindow(key, sender, plainContent) {
+  function feedSlangWindow(key, sender, plainContent, isSelf = false) {
     if (cfg.slang?.enabled === false) return;
     if (!key || !plainContent || typeof plainContent !== 'string') return;
     const text = plainContent.trim();
@@ -274,7 +370,8 @@ export function createSlangModule(ctx) {
     if (/进入角色扮演|退出角色扮演|切换角色|设置角色|改角色|换角色|关闭角色扮演|开启角色扮演/.test(text)) return;
     if (!slangWindows.has(key)) slangWindows.set(key, []);
     const win = slangWindows.get(key);
-    win.push({ sender: String(sender || '未知'), text: text.slice(0, 200), time: Date.now() });
+    // isSelf：表达学习要排除她自己的发言（黑话提取不关心这个字段）
+    win.push({ sender: String(sender || '未知'), text: text.slice(0, 200), time: Date.now(), isSelf: Boolean(isSelf) });
     if (win.length > 80) win.splice(0, win.length - 80);
     maybeQueueSlangExtraction(key);
   }
@@ -331,5 +428,5 @@ export function createSlangModule(ctx) {
   }
 
 
-  return { saveSlangStore, queueSlangTask, ensureSlangLearnerSession, invalidateSlangLearnerSession, waitLearnerTurn, runSlangExtraction, runSlangResearch, maybeQueueSlangExtraction, feedSlangWindow, allowSlangSubmit, publicSlangEntry, confirmedSlangListV2, withSlangContext };
+  return { saveSlangStore, queueSlangTask, ensureSlangLearnerSession, invalidateSlangLearnerSession, waitLearnerTurn, runSlangExtraction, runSlangResearch, maybeQueueSlangExtraction, feedSlangWindow, allowSlangSubmit, publicSlangEntry, confirmedSlangListV2, withSlangContext, runExpressionExtraction, listExpressions, setExpressionStatus, deleteExpressionById, expressionContextFor, saveExpressionStore };
 }

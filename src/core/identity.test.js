@@ -27,7 +27,7 @@ test('groupIdFromKey：只认 group:数字，其余返回空串', () => {
 
 // ---------------- selfAliases ----------------
 test('selfAliases：昵称小写化，叠加名片缓存', () => {
-  assert.deepEqual([...selfAliases('竹沥半夏二号机', new Set(['大隐鲸']))].sort(), ['大隐鲸', '竹沥半夏二号机'].sort());
+  assert.deepEqual([...selfAliases('测试二号机', new Set(['大隐鲸']))].sort(), ['大隐鲸', '测试二号机'].sort());
   assert.deepEqual([...selfAliases('ABC')], ['abc']);
   assert.deepEqual([...selfAliases('', new Set(['x']))], ['x']);
   assert.deepEqual([...selfAliases(null, null)], []);
@@ -48,19 +48,19 @@ test('memberName 刻意不 trim —— 空白名片原样返回（与旧实现�
 
 // ---------------- BUG-001：群名片是未解码 protobuf ----------------
 
-/** 实测样本：群 20000001 的 945327621，19 个字符里 10 个是 C0 控制字符。 */
+/** 实测样本：群 20000001 的 10000006，19 个字符里 10 个是 C0 控制字符。 */
 const GARBAGE_CARD = '\n\n\n\b&ÿfÌÿ\n\u000e\u0012\f丰川祥子\u0010\u0000';
 
 test('BUG-001 复现：脏名片 + 干净昵称 → 用昵称，不再输出二进制乱码', () => {
   // 修复前：memberName 返回 GARBAGE_CARD，她在 AI 眼里就是一串乱码
-  assert.equal(memberName({ card: GARBAGE_CARD, nickname: '群友庚' }), '群友庚');
-  assert.equal(senderLabel({ card: GARBAGE_CARD, nickname: '群友庚' }, '945327621'), '群友庚');
+  assert.equal(memberName({ card: GARBAGE_CARD, nickname: '大祥老师' }), '大祥老师');
+  assert.equal(senderLabel({ card: GARBAGE_CARD, nickname: '大祥老师' }, '10000006'), '大祥老师');
 });
 
 test('BUG-001：只有脏名片、没有昵称 → 返回空串，让调用方回退到 QQ 号', () => {
   // 空串比二进制乱码有用：senderLabel 会退回 QQ 号，memberName(…) || null 会变 null
   assert.equal(memberName({ card: GARBAGE_CARD }), '');
-  assert.equal(senderLabel({ card: GARBAGE_CARD }, '945327621'), '945327621');
+  assert.equal(senderLabel({ card: GARBAGE_CARD }, '10000006'), '10000006');
   assert.equal(senderLabel({ card: GARBAGE_CARD }, null, '有人'), '有人');
 });
 
@@ -75,11 +75,11 @@ test('BUG-001：两个都脏 → 空串', () => {
 test('isUsableName 的边界：真实群里的干净名字不能被误判', () => {
   // 这 47 个是实测从 OneBot get_group_member_list 拿到的真实名片/昵称样本
   const clean = [
-    '群友丑，时不时来群里讲道（128/128）', '这货真不是千岁岁', '姜丝小涵（✓）',
-    '群友丁（！？来来？！）', '群友庚', '　　　　　', '群友子',
-    '[有新文件] 禁漫天堂.apk', '群友壬，至丑，至绷的化身', '群友甲，🌿私你们这群烧货',
-    '🐊Gx🐊', '🤓👆🏻', 'ღIRAS 17514', '♿', '♜', '群友丙（50/128）',
-    'A', '小号', 'UserB'
+    '群卦师，时不时来群里讲道（128/128）', '这货真不是千岁岁', '姜丝小涵（✓）',
+    '请你吃酸橙（！？来来？！）', '大祥老师', '　　　　　', '超高校级的大善人',
+    '[有新文件] 禁漫天堂.apk', '至招，至丑，至绷的化身', '群三水，🌿私你们这群烧货',
+    '🐊Gx🐊', '🤓👆🏻', 'ღIRAS 17514', '♿', '♜', '咲音是凯尔希大人的狗（50/128）',
+    'A', '小号', 'Dmnu'
   ];
   for (const n of clean) assert.equal(isUsableName(n), true, `被误判：${JSON.stringify(n)}`);
 
@@ -134,8 +134,8 @@ test('replyOwnershipOk：私聊消息不能带群归属，且发送者必须匹�
 });
 
 test('replyOwnershipOk：私聊里允许机器人自己发的消息', () => {
-  assert.equal(replyOwnershipOk({ user_id: '10000000' }, 'private', '10000001', '10000000'), true);
-  assert.equal(replyOwnershipOk({ user_id: '10000000' }, 'private', '10000001', null), false, '不传 selfId 就不能放行');
+  assert.equal(replyOwnershipOk({ user_id: '3612473248' }, 'private', '10000001', '3612473248'), true);
+  assert.equal(replyOwnershipOk({ user_id: '3612473248' }, 'private', '10000001', null), false, '不传 selfId 就不能放行');
 });
 
 test('replyOwnershipOk：raw 非法一律拒绝', () => {

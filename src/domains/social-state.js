@@ -199,6 +199,24 @@ export function createSocialStateModule(ctx) {
     }
   }
 
+  /**
+   * 热重载记忆三件套（2026-10-20）：外部脚本改完 state/memory/*.json 后不用重启桥接。
+   * 只覆盖记忆字段，**不动** recentMessages/unread/计时器（整体重载会丢运行态）。
+   */
+  function reloadMemory() {
+    let n = 0;
+    for (const [key, st] of socialV2.conversations) {
+      const file = memoryFilePath(MEMORY_DIR, key);
+      if (!file) continue;
+      const onDisk = readJsonSafe(file, null);
+      if (!onDisk) continue;
+      applyMemory(st, onDisk);
+      n += 1;
+    }
+    saveSocialV2State();
+    return { sessions: n };
+  }
+
   function hydrateConversationV2(key, seenTokens, val) {
           const defaultWc = defaultWakeConfigV2();
           let agentToken = String(val.agentToken || crypto.randomBytes(16).toString('hex'));
@@ -245,7 +263,11 @@ export function createSocialStateModule(ctx) {
                 clean[k] = v;
               }
               return clean;
-            })()
+            })(),
+            // 记忆格式版本（1 = key 是名字，2 = key 是 QQ 号）。runtime 文件里通常没有
+            // （记忆落在 state/memory/<key>.json，由下面的 loadConversationMemoryFiles 覆盖），
+            // 缺失当 0 = 还没迁移。字段表里必须有它，否则读回来会被丢掉。
+            memoryVersion: Number(val.memoryVersion) || 0
           };
           // 旧状态/异常状态里的指定成员名单也统一归一化，防止“null”/非法值污染。
           if (st.wakeConfig?.triggers && typeof st.wakeConfig.triggers === 'object') {
@@ -353,7 +375,7 @@ export function createSocialStateModule(ctx) {
     const recentAi2m = recent.filter((m) => m && m.isSelf && now - (Number(m.time) || 0) < 2 * 60 * 1000).length;
     // 反向闸门：这一段以前**每一句都在催她说话**（"别只当观众""别让话头掉地上""想说就说"），
     // 没有一句让她收着。实测群里 150 条里她占 42%，而她自己的记忆里也留着
-    // 「群友甲评了句『看来还有瑕疵』——我怀疑是我话太密」。只会踩油门的段落要把刹车补上。
+    // 「群三水评了句『看来还有瑕疵』——我怀疑是我话太密」。只会踩油门的段落要把刹车补上。
     const overHint = overParticipationHint(st, { now });
     let hint = '';
     if (directUnread > 0) {
@@ -399,23 +421,30 @@ export function createSocialStateModule(ctx) {
 
   // 记忆的读写纯逻辑已抽到 src/core/memory.js（有 22 条单测）。
   // 这里保留同名薄包装，注入时钟与脱敏函数，这样下面 13 个调用点一行都不用改。
-  function formatMemoryV2(st) {
+  function formatMemoryV2(st, key = '') {
     return formatMemory(st, {
       now: Date.now(),
+      // 显示层要把 QQ 反查回**当前名片**，所以这里把人物表和会话 key 一起给它
+      // （以前只给 st，于是 key 是 QQ 之后材料里会显示成一串数字）。
+      people: peopleState,
+      sessionKey: String(key || ''),
       memoryMaxMembers: cfg.socialV2?.context?.memoryMaxMembers,
       memoryMaxTraits: cfg.socialV2?.context?.memoryMaxTraits,
       memoryTraitChars: cfg.socialV2?.context?.memoryTraitChars
     });
   }
 
-  function appendMemoryV2(st, category, content, extra = {}) {
+  function appendMemoryV2(st, category, content, extra = {}, { key = '' } = {}) {
     // 返回 true 才落盘 —— 与原实现「非法 target 直接 return、不落盘」的行为对齐。
     const shouldSave = appendMemory(st, {
       category,
       content,
       extra,
       now: Date.now(),
-      redact: redactKnownTokensOnly
+      redact: redactKnownTokensOnly,
+      // 记忆 key 现在是 QQ（身份锚点）：解析名字要用到"本会话叫什么"和全局人物表。
+      key: String(key || ''),
+      people: peopleState
     });
     if (shouldSave) saveSocialV2State();
   }
@@ -520,5 +549,5 @@ export function createSocialStateModule(ctx) {
       }));
   }
 
-  return { getSocialV2State, loadSocialV2State, saveSocialV2State, allConversationSnapshots, getPeople, setPersonRelation, setPersonTag, refreshPeopleNames, savePeople, getMood, setMood, rememberPendingMentionV2, formatParticipationV2, suggestQuietMsV2, formatMemoryV2, appendMemoryV2 };
+  return { getSocialV2State, loadSocialV2State, saveSocialV2State, allConversationSnapshots, getPeople, setPersonRelation, setPersonTag, refreshPeopleNames, savePeople, getMood, setMood, rememberPendingMentionV2, formatParticipationV2, suggestQuietMsV2, formatMemoryV2, appendMemoryV2, reloadMemory };
 }

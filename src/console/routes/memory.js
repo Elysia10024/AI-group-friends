@@ -12,9 +12,11 @@
 //   Object.assign(Object.create(deps), { req, res, url, sendJson, readBody, gateSendTool })
 // 用 Object.create(deps) 而不是展开，是为了让 deps 上的 get/set 访问器继续生效。
 import { recallAcrossConversations, parseSinceMs } from '../../core/memory-recall.js';
+import { mergeImpressionRecords } from '../../core/memory.js';
 import { memoryFilePath } from '../../core/memory-files.js';
 import { applyMoodEvent } from '../../core/mood.js';
 import { normalizeRelation, relationFromTrait, resolveRelationWrite } from '../../core/relation.js';
+import { matchExistingKey, personShortName, resolvePersonQq, displayNameForQq, QQ_KEY_RE } from '../../core/person-name.js';
 
 /**
  * 覆盖 5 条路由，原 L2627–L2767
@@ -35,6 +37,7 @@ export async function handleMemory1(ctx) {
     getSocialV2State,
     path,
     readBody,
+    readRoleState,
     redactKnownTokensOnly,
     req,
     ROOT,
@@ -48,11 +51,20 @@ export async function handleMemory1(ctx) {
   /** 拼绝对路径：记忆文件在 state/memory/ 下（每个会话一个）。 */
   const joinRoot = (...p) => p.reduce((a, b) => path.join(a, b), ROOT);
 
+  /** 当前是不是在扮演别人（≠ 小鲸鱼）。扮演期间记忆读写都要特殊处理。 */
+  const roleplayName = () => {
+    try {
+      const rs = typeof readRoleState === 'function' ? readRoleState() : null;
+      const r = String(rs?.role ?? '').trim();
+      return r && r !== '小鲸鱼' ? r : '';
+    } catch { return ''; }
+  };
+
   /**
    * 破坏性写入前的自动快照（2026-09-21 加）。
    *
    * 起因是一次真实事故：我用 `memory-update` 做连通性测试，随手写了两条"测试一条/测试两条"，
-   * 它按设计**整体替换** traits —— 于是群友乙的 20 条日记当场变成测试字符串。
+   * 它按设计**整体替换** traits —— 于是拾圆拾圆的 20 条日记当场变成测试字符串。
    * 而记忆只存在 state/social-v2.json（gitignore、无版本历史），
    * 最后只能靠"影子组装记录里渲染过的片段"捞回 12 条，剩下 8 条永久丢失。
    *
@@ -81,6 +93,29 @@ export async function handleMemory1(ctx) {
       // 快照失败也要留下痕迹，但绝不能因此让写入失败（写入方可能正需要它）
       try { ctx.log?.(`记忆快照失败（${op} ${key}）：${error?.message ?? error}`); } catch { /* 日志失败就放弃 */ }
     }
+  }
+
+  /**
+   * 「她说的这个名字」→ 记忆表里的**实际 key**（QQ 或还没认领的名字）。
+   * 这是路由侧唯一的取 key 入口：直接命中 → 走 core 的 resolvePersonQq → 名字/短名兜底。
+   * 注意它**不含任何映射逻辑**，只是把 core 那唯一一份解析接上去（两份逻辑必然走偏）。
+   */
+  function resolveImpressionKey(target, st, key) {
+    const imps = st?.memberImpressions && typeof st.memberImpressions === 'object' ? st.memberImpressions : {};
+    const raw = String(target ?? '').trim();
+    if (!raw) return '';
+    if (imps[raw]) return raw;                                   // 已经是 key（QQ 或 pendingQq 的名字）
+    const qq = resolvePersonQq(raw, { key, people: getPeople?.(), st });
+    if (qq && imps[qq]) return qq;
+    const byName = matchExistingKey(raw, Object.keys(imps));
+    return byName || (qq && !imps[qq] ? qq : '');
+  }
+
+  /** 记忆 key → 给她/给面板看的名字（QQ 反查当前名片；pendingQq 的 key 本身就是名字）。 */
+  function impressionLabel(impKey, im, key, st) {
+    const k = String(impKey ?? '');
+    if (!QQ_KEY_RE.test(k)) return k;
+    return displayNameForQq(k, { key, people: getPeople?.(), st, fallback: im?.displayName });
   }
 
     if (await routeMemoryAppend()) return true;
@@ -138,7 +173,14 @@ export async function handleMemory1(ctx) {
       if (req.headers['x-agent-token'] && !v2SessionAllowed(key)) { sendJson({ ok: false, error: '目标不在当前模式允许范围内' }, 403); return true; }
       if (req.headers['x-agent-token'] && !v2ToolEnabled('memory')) { sendJson({ ok: false, error: '工具未启用：qq_memory_append' }, 403); return true; }
       const st = getSocialV2State(key);
+      // 角色扮演期间（当前角色 ≠ 小鲸鱼）：记忆一律打 [扮演:角色] 标签，而且不碰真实的
+      // 关系 / 标签 / 心情——那些是那个角色说的话，不是小鲸鱼的（2026-10-19 主人要求，防污染）。
+      const playingRole = roleplayName();
       if (category === 'mood') {
+        if (playingRole) {
+          sendJson({ ok: false, roleplay: true, error: `角色扮演期间不改心情（那是「${playingRole}」的，不是小鲸鱼的），这条没写。` });
+          return true;
+        }
         // 心情是**全局**的：写进 state/memory/mood.json，所有会话共用（这就是"跨群串联"）。
         // sourceKey 记下"来自哪个会话"——只有她自己/控制台看得到，材料里只写"别处的事"。
         const next = applyMoodEvent(getMood(), {
@@ -155,27 +197,29 @@ export async function handleMemory1(ctx) {
       }
       // 顺序很重要：**先写印象正文**，再处理全局的关系/标签 ——
       // 那边万一认不出人，也不能把已经说好的印象吞掉（真实教训：这两个写入曾经互相顶掉）。
-      appendMemoryV2(st, category, content, extra);
+      // 扮演期间的正文带 [扮演:角色] 标签：小鲸鱼切回后看到就知道不是自己说的。
+      const savedContent = playingRole ? `[扮演:${playingRole}] ${content}` : content;
+      appendMemoryV2(st, category, savedContent, extra, { key });
       let relationOut = null;
       // 「关系：X」不进 traits —— 关系跟 QQ 走（全局），写进 state/memory/people.json。
       if (category === 'memberImpression') {
+        if (playingRole) {
+          // 扮演期间写的印象只落正文，不改小鲸鱼对真人的关系和标签
+          relationOut = { roleplay: true, target: String(extra.target ?? '').trim(), note: `角色扮演期间不改真实关系和标签；这条印象已按 [扮演:${playingRole}] 存下` };
+        } else {
         // 关系档位与「小标签」都按 QQ 落在全局人物表，而且两个都能**单独**写。
         const rel = normalizeRelation(extra.relation) || relationFromTrait(content);
         const tagWanted = String(extra.tag ?? '').replace(/\s+/g, ' ').trim();
         if (rel || tagWanted) {
           const rawTarget = String(extra.target ?? '').trim();
-          // target 直接给 QQ 号时，尽量换成他**在本会话的显示名** ——
-          // 否则同一个人会被记成两个 key（"UserQ" 和 "10000002"），面板和材料里就成了两个人。
-          const target = /^\d{5,12}$/.test(rawTarget)
-            ? (String(getPeople?.()?.[rawTarget]?.names?.[key] ?? '').trim() || rawTarget)
-            : rawTarget;
-          // target 可以是群友名字，也可以**直接给 QQ 号**（名字查不到时留 QQ 号兜底）：
-          // 他不在最近消息窗口里时（窗口被刷掉、刚被从忽略名单放出来）只有 QQ 号认得出来。
-          const qq = /^\d{5,12}$/.test(rawTarget)
-            ? rawTarget
-            : String((st.recentMessages ?? []).find((m) => !m.isSelf && String(m.sender ?? '').trim() === target)?.userId ?? '').trim();
+          // **只走 core 的那一份解析**（2026-10-15 收拢）。以前这里是第二份：只查本会话
+          // recentMessages 的 sender、且只服务关系/标签 —— 印象的 key 完全没用它，于是同一个人
+          // 的印象按名字各存一份、关系挂在 QQ 上，两边接不上（"讨厌档没生效"的一半原因）。
+          const qq = resolvePersonQq(rawTarget, { key, people: getPeople?.(), st });
+          // 面板/回报里给她看的名字：QQ → 当前名片；解析不出就原样回名字
+          const target = displayNameForQq(qq || rawTarget, { key, people: getPeople?.(), st, fallback: rawTarget });
           if (!qq) {
-            // 印象已经写进去了，这里如实回报"关系/标签没改"（不静默、也不吞掉印象）。
+            // 印象已经写进去了（key 是名字 + pendingQq），这里如实回报"关系/标签没改"（不静默、也不吞掉印象）。
             relationOut = { target, error: `认不出「${target}」是哪一位（他要在本会话里说过话，名字得和消息里显示的一致；也可以直接给 QQ 号）` };
           } else {
             const out = { qq, target };
@@ -187,7 +231,7 @@ export async function handleMemory1(ctx) {
             if (rel) {
               // **她的判断是权威**（2026-10-12 主人定）：直接采纳，升能升、降能降。
               // 旧写法 `setPersonRelation(qq, closerRelation(prev, rel))` 永远取更亲近的那个，
-              // 于是"关系变差"永远存不下来（真实 bug —— UserQ 骂她那一次暴露）。
+              // 于是"关系变差"永远存不下来（真实 bug —— Qruei 骂她那一次暴露）。
               // 只有两条硬边界会改写她的选择，而且改写了必须如实回报：主人恒为家人、家人只能由主人指定。
               const decision = resolveRelationWrite({ ownerQQ: cfg?.ownerQQ, qq, next: rel });
               if (!decision.ok) {
@@ -202,14 +246,15 @@ export async function handleMemory1(ctx) {
             relationOut = out;
           }
         }
+        }   // end else：非扮演才改全局关系
       }
       sendJson({
         ok: true,
         key,
         category,
-        content,
+        content: savedContent,
         ...(relationOut ?? {}),
-        memory: formatMemoryV2(st)
+        memory: formatMemoryV2(st, key)
       });
       return true;
     }
@@ -258,9 +303,18 @@ export async function handleMemory1(ctx) {
       } else if (category === 'memberImpression' && st.memberImpressions && typeof st.memberImpressions === 'object') {
         const oldTarget = target;
         if (['__proto__', 'constructor', 'prototype'].includes(oldTarget)) { sendJson({ ok: false, error: '非法的群友名字' }, 400); return true; }
-        const im = st.memberImpressions[oldTarget] || {};
-        const newTarget = String(cleanNewExtra.target || oldTarget).trim();
-        if (!newTarget || ['__proto__', 'constructor', 'prototype'].includes(newTarget)) { sendJson({ ok: false, error: '非法的群友名字' }, 400); return true; }
+        // 旧 key：她给的名字/QQ 都认（QQ 走 core 解析，pendingQq 的名字直接命中）
+        const oldKey = resolveImpressionKey(oldTarget, st, key) || oldTarget;
+        const im = st.memberImpressions[oldKey] || {};
+        // 新 key：**改名也要锚在 QQ 上** —— 能算出 QQ 就用 QQ，算不出才退回名字。
+        // 这样她把"杨森"改成"群三水"时，不会又开出一个新名字 key。
+        const newRaw = String(cleanNewExtra.target || oldTarget).trim();
+        if (!newRaw || ['__proto__', 'constructor', 'prototype'].includes(newRaw)) { sendJson({ ok: false, error: '非法的群友名字' }, 400); return true; }
+        const newQq = resolvePersonQq(newRaw, { key, people: getPeople?.(), st });
+        const newTarget = newQq
+          || matchExistingKey(newRaw, Object.keys(st.memberImpressions))
+          || personShortName(newRaw)
+          || newRaw;
         if (newContent !== undefined) {
           im.traits = newContent.split(/[,，、]/).map((s) => s.trim()).filter(Boolean).slice(0, 20);
           delete im.traitMeta;   // traits 换过了，旧时间对不上号（宁可没时间，也别给错位的时间）
@@ -277,11 +331,20 @@ export async function handleMemory1(ctx) {
           delete im.traitMeta;   // 同上：整组换过，时间作废
         }
         if (cleanNewExtra.interactionCount !== undefined) im.interactionCount = Math.max(0, Number(cleanNewExtra.interactionCount) || 0);
-        if (newTarget !== oldTarget) delete st.memberImpressions[oldTarget];
+        // 认领：改名后如果这个人已经有一条 QQ 记忆（或本来就该锚在 QQ 上），
+        // 就把它并进来，别在表里留两个 key 指同一个人。
+        if (newTarget && newTarget !== oldKey && st.memberImpressions[newTarget]) {
+          const merged = mergeImpressionRecords([st.memberImpressions[newTarget], im]);
+          im.traits = merged.traits;
+          im.traitMeta = merged.traitMeta;
+          im.interactionCount = merged.interactionCount;
+          im.lastSeenAt = Math.max(Number(im.lastSeenAt) || 0, Number(st.memberImpressions[newTarget].lastSeenAt) || 0);
+        }
+        if (newTarget !== oldKey) delete st.memberImpressions[oldKey];
         st.memberImpressions[newTarget] = im;
       }
       saveSocialV2State();
-      sendJson({ ok: true, key, category, memory: formatMemoryV2(st) });
+      sendJson({ ok: true, key, category, memory: formatMemoryV2(st, key) });
       return true;
     }
     return false;
@@ -301,6 +364,15 @@ export async function handleMemory1(ctx) {
       if (req.headers['x-agent-token'] && !v2SessionAllowed(key)) { sendJson({ ok: false, error: '目标不在当前模式允许范围内' }, 403); return true; }
       if (req.headers['x-agent-token'] && !v2ToolEnabled('memory')) { sendJson({ ok: false, error: '工具未启用：qq_memory_query' }, 403); return true; }
       const st = getSocialV2State(key);
+      // 角色扮演期间：别的会话的记忆也不给她查（本会话的记忆在进入扮演时已被清空）。
+      if (roleplayName() && String(url.searchParams.get('scope') ?? '') === 'all') {
+        sendJson({
+          ok: true, key, roleplay: true, formatted: '',
+          raw: { activeTopics: [], pendingThoughts: [], memberImpressions: {} },
+          recallHint: '角色扮演期间不查其他会话的记忆。'
+        });
+        return true;
+      }
       const raw = {
         activeTopics: Array.isArray(st.activeTopics) ? st.activeTopics.slice(-20) : [],
         pendingThoughts: Array.isArray(st.pendingThoughts) ? st.pendingThoughts.filter((t) => !t.expiresAt || Date.now() < t.expiresAt).slice(-20) : [],
@@ -317,15 +389,34 @@ export async function handleMemory1(ctx) {
         raw.pendingThoughts = [];
       }
       // person：只看某位群友（名字片段匹配即可；raw 也跟着收窄——调用方要的就是"只看他"）
+      // 记忆 key 现在是 QQ，所以过滤前先反查成**当前名片**再比（否则按名字永远筛不到人）。
       if (person) {
-        for (const name of Object.keys(raw.memberImpressions)) {
-          if (!(name.includes(person) || person.includes(name))) delete raw.memberImpressions[name];
+        for (const impKey of Object.keys(raw.memberImpressions)) {
+          const label = impressionLabel(impKey, raw.memberImpressions[impKey], key, st);
+          if (!(label.includes(person) || person.includes(label))) delete raw.memberImpressions[impKey];
         }
+      }
+      // **对外一律用名字**：记忆 key 现在是 QQ（身份锚点），而面板、`qq_memory_query` 的结果
+      // 都直接读 raw.memberImpressions 的 key —— 不换就成了满屏 QQ 号（她看到的也变数字）。
+      // 这里把 key 换成当前名片，QQ 放进记录的 `qq` 字段（身份不丢，前端一行都不用改）。
+      // 同一会话里两个人同名片时加后缀：宁可显示 `群三水(2)`，也不能让一条记忆被顶掉。
+      {
+        const used = new Set();
+        const labelled = {};
+        for (const [impKey, im] of Object.entries(raw.memberImpressions)) {
+          const base = impressionLabel(impKey, im, key, st);
+          let label = base;
+          for (let n = 2; used.has(label); n += 1) label = `${base}(${n})`;
+          used.add(label);
+          labelled[label] = QQ_KEY_RE.test(impKey) ? { ...im, qq: impKey } : im;
+        }
+        raw.memberImpressions = labelled;
       }
       // 印象的**时间**单独列一份（traits 本身仍是字符串数组：渲染、前端、旧工具一行都不用改）：
       // 每条带 firstAt=最早提到 / lastAt=最近提到 / hits=提过几次。
       const timedTraits = [];
-      for (const [name, im] of Object.entries(raw.memberImpressions)) {
+      for (const [impKey, im] of Object.entries(raw.memberImpressions)) {
+        const personLabel = impressionLabel(impKey, im, key, st);
         const traits = Array.isArray(im?.traits) ? im.traits : [];
         const meta = Array.isArray(im?.traitMeta) && im.traitMeta.length === traits.length ? im.traitMeta : [];
         for (let i = 0; i < traits.length; i += 1) {
@@ -333,7 +424,7 @@ export async function handleMemory1(ctx) {
           // 按时间查的时候，没有时间的条目不出场：不给假时间，也不拿 0 当"很久以前"。
           if (sinceMs > 0 && !(lastAt > 0 && lastAt >= sinceMs)) continue;
           timedTraits.push({
-            person: name,
+            person: personLabel,
             text: String(traits[i] ?? ''),
             firstAt: Number(meta[i]?.firstAt) || 0,
             lastAt,
@@ -358,9 +449,24 @@ export async function handleMemory1(ctx) {
           }
         } catch { otherConversations = []; }
       }
+      // 跨会话回忆也按**名字**呈现：把别的会话里以 QQ 为 key 的印象换成那边的当前名片
+      // （不换的话她查"在别的群说过什么"会看到一串 QQ 号，`person` 过滤也会全部失效）。
+      // 同一会话里两个人同名片时加后缀 —— 宁可显示 `群三水(2)`，也不能让一条记忆被顶掉。
+      const labelledConversations = otherConversations.map((conv) => {
+        const used = new Set();
+        const imps = {};
+        for (const [impKey, im] of Object.entries(conv?.memory?.memberImpressions ?? {})) {
+          const base = impressionLabel(impKey, im, conv.key, null);
+          let label = base;
+          for (let n = 2; used.has(label); n += 1) label = `${base}(${n})`;
+          used.add(label);
+          imps[label] = im;
+        }
+        return { key: conv.key, memory: { ...conv.memory, memberImpressions: imps } };
+      });
       const recall = otherConversations.length
         ? recallAcrossConversations({
-          conversations: otherConversations,
+          conversations: labelledConversations,
           requesterKey: key,
           query: String(url.searchParams.get('query') ?? ''),
           person,
@@ -372,7 +478,7 @@ export async function handleMemory1(ctx) {
         ok: true,
         key,
         category,
-        formatted: formatMemoryV2({ ...st, ...raw }),
+        formatted: formatMemoryV2({ ...st, ...raw }, key),
         raw,
         timedTraits: timedTraitsOut.length ? timedTraitsOut : undefined,
         timedTraitsHint: timedTraitsOut.length
@@ -408,10 +514,13 @@ export async function handleMemory1(ctx) {
       } else if (category === 'pendingThought' && Array.isArray(st.pendingThoughts)) {
         st.pendingThoughts = st.pendingThoughts.filter((t) => String(t?.text ?? '') !== content);
       } else if (category === 'memberImpression' && st.memberImpressions && typeof st.memberImpressions === 'object') {
-        delete st.memberImpressions[target];
+        // 名字 / QQ 都认：先解析成实际 key（QQ 或 pendingQq 的名字），解析不出才原样删（兼容老行为）
+        const impKey = resolveImpressionKey(target, st, key);
+        if (impKey) delete st.memberImpressions[impKey];
+        else delete st.memberImpressions[target];
       }
       saveSocialV2State();
-      sendJson({ ok: true, key, category, memory: formatMemoryV2(st) });
+      sendJson({ ok: true, key, category, memory: formatMemoryV2(st, key) });
       return true;
     }
     return false;
@@ -433,7 +542,7 @@ export async function handleMemory1(ctx) {
       if (!category || category === 'pendingThought') st.pendingThoughts = [];
       if (!category || category === 'memberImpression') st.memberImpressions = {};
       saveSocialV2State();
-      sendJson({ ok: true, key, category: category || 'all', memory: formatMemoryV2(st) });
+      sendJson({ ok: true, key, category: category || 'all', memory: formatMemoryV2(st, key) });
       return true;
     }
     return false;

@@ -16,7 +16,7 @@ test('记一条心情：覆盖旧的（心情是状态不是流水账）', () =>
 
 test('跨群：心情带得走，但材料里**不写别的群的名字**', () => {
   const m = applyMoodEvent(null, { tone: '有点闷', intensity: 2, because: '在别的地方被否定了一句', sourceKey: 'group:20000001', now: NOW });
-  const line = moodLine(m, 'group:20000002');   // 在**另一个**群里渲染
+  const line = moodLine(m, 'group:20000004');   // 在**另一个**群里渲染
   assert.match(line, /有点闷/);
   assert.match(line, /别处/);
   assert.ok(!line.includes('20000001'), '不能泄露别的群的群号');

@@ -375,6 +375,7 @@ export async function handleSend2(ctx) {
     gateSendTool,
     getSocialV2State,
     hourCapFor,
+    reloadMemory,
     log,
     markAiSpoke,
     rateLimitCheck,
@@ -400,8 +401,25 @@ export async function handleSend2(ctx) {
     if (await routeSendSticker()) return true;
     if (await routeSendImage()) return true;
     if (await routeSendVoice()) return true;
+    if (await routeReloadMemory()) return true;
 
   return false;
+
+  /**
+   * 热重载记忆（2026-10-20）：外部脚本改完 state/memory/*.json 后调用一次，不用重启桥接。
+   * 只覆盖记忆字段（印象/话题/想法），不动最近消息与计时器。
+   */
+  async function routeReloadMemory() {
+    if (!(req.method === 'POST' && url.pathname === '/api/socialV2/reload-memory')) return false;
+    try {
+      if (typeof reloadMemory !== 'function') { sendJson({ ok: false, error: '重载未接线' }, 500); return true; }
+      const r = reloadMemory();
+      sendJson({ ok: true, ...r });
+    } catch (error) {
+      sendJson({ ok: false, error: String(error?.message ?? error) }, 500);
+    }
+    return true;
+  }
 
   /**
    * 发语音（她自己的声音）。硬边界在 domains/voice-out.js 里兜：单条字数上限、最小间隔、
@@ -477,7 +495,7 @@ export async function handleSend2(ctx) {
    * 本地图库发图（POST /api/socialV2/send-image）。
    *
    * 与 send-sticker 的关系：表情包走 QQ 云端的收藏表情库；这条走本地文件夹
-   * （<项目目录>\image，library.json 是唯一真相源）。两者共用同一套发送闸门与记录逻辑 ——
+   * （<项目根>\image，library.json 是唯一真相源）。两者共用同一套发送闸门与记录逻辑 ——
    * 因为对她来说都是"发一张图"，没必要两套限额、两套记录。
    */
   async function routeSendImage() {

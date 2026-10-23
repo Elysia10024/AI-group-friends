@@ -76,7 +76,7 @@ export function createWakeModule(ctx) {
     const roleState = readRoleState();
     const selfAliases = [...selfAliasesFor(groupIdFromKey(key))].filter(Boolean);
     const st = getSocialV2State(key);
-    const memoryText = formatMemoryV2(st);
+    const memoryText = formatMemoryV2(st, key);
     const participationText = formatParticipationV2(st);
     const stickerCfg = cfg.socialV2?.sticker ?? {};
     // 表情策略段依赖 stickerEntries 这个模块级状态，所以由桥侧渲染好再传进去。
@@ -101,6 +101,9 @@ export function createWakeModule(ctx) {
       stickerText,
       // 说说那一行（额度 + 上一条）：关掉 / 没开提示时是空串。每轮都带，一行 ~100 字。
       qzoneText: qzonePromptText ? qzonePromptText() : '',
+      // B 站订阅那一行：关注了谁 + 最近播报了什么。播报是桥接直接发的、没进过她的上下文，
+      // 不给这行她答不上「你关注的那几个游戏有新动态吗」。
+      biliText: typeof ctx.biliPromptText === 'function' ? ctx.biliPromptText(key) : '',
       qzoneComment,
       inlineMax: cfg.socialV2?.context?.inlineMessages,
       // 沉睡前观察只在开关打开时才提；传 0 表示"别提这件事"（prompt 侧据此不再要求等待）。

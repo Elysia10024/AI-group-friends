@@ -51,7 +51,20 @@ function readRoleState() {
   return readJsonSafe(ROLE_STATE_FILE, { role: null, mode: 'active' });
 }
 function writeRoleState(role, mode) {
-  atomicWriteJson(ROLE_STATE_FILE, { role: role ?? null, mode: mode ?? 'active' });
+  const prev = readRoleState();
+  const nextRole = role ?? null;
+  const next = { role: nextRole, mode: mode ?? 'active' };
+  if (prev?.role !== nextRole) {
+    // 角色切换：记住上一个角色。材料里要用它提醒"你刚才在扮演 X"，
+    // 否则切回小鲸鱼后她会把扮演时说过的话当成自己说过的（2026-10-19 主人要求）。
+    next.previous = prev?.role ?? null;
+    next.switchedAt = Date.now();
+  } else {
+    // 模式切换（active/silent）不算角色切换，保留原记录
+    if (prev?.previous !== undefined) next.previous = prev.previous;
+    if (prev?.switchedAt !== undefined) next.switchedAt = prev.switchedAt;
+  }
+  atomicWriteJson(ROLE_STATE_FILE, next);
 }
 function sanitizeRoleName(name) {
   return String(name ?? '').replace(/[^\w\u4e00-\u9fff-]/g, '');

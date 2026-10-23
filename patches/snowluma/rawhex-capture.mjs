@@ -1,7 +1,7 @@
 // 给 SnowLuma 的 protobuf 解码器补丁：未知字段保留原始字节（hex），并写进日志
 import fs from 'node:fs';
 
-const F = '<你的项目目录>/SnowLuma/index.mjs';
+const F = '<项目根>/SnowLuma/index.mjs';
 let t = fs.readFileSync(F, 'utf8');
 
 // ---------- 补丁 A：820 个解码块，给 _unknown 对象加 rawHex ----------

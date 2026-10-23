@@ -37,7 +37,7 @@ test('g_tk 一定是非负整数（& 0x7fffffff）', () => {
 });
 
 test('cookie 取值：p_skey 优先，别用 skey 算签名（那个坑会 403）', () => {
-  const str = 'pt2gguin=o10000000; uin=o10000000; skey=@SHORTskey; RK=abc; p_skey=LONGlivepskey; ptcz=z';
+  const str = 'pt2gguin=o3612473248; uin=o3612473248; skey=@SHORTskey; RK=abc; p_skey=LONGlivepskey; ptcz=z';
   assert.equal(cookieValue(str, 'skey'), '@SHORTskey');
   assert.equal(cookieValue(str, 'p_skey'), 'LONGlivepskey');
   assert.equal(cookieValue(str, '不存在'), '');
@@ -168,10 +168,10 @@ test('详情渲染：给她看的几行里有作者、时间、楼中楼缩进',
 test('好友动态：洗掉预渲染 HTML，空的时候说清是"没有新动态"', () => {
   assert.match(formatQzoneFeeds([], {}), /好友动态是空的/);
   const text = formatQzoneFeeds([
-    { uin: 10000001, nickname: '竹沥半夏', time: 1763724584, html: '<div class="f">今天<b>挺好</b>的<br/>真的</div>' },
+    { uin: 10000001, nickname: '测试用户', time: 1763724584, html: '<div class="f">今天<b>挺好</b>的<br/>真的</div>' },
     { uin: 1, nickname: '某人', time: 0, html: '' }
   ], { now: Date.parse('2025-11-22T00:00:00+08:00') });
-  assert.match(text, /竹沥半夏：今天 挺好 的 真的/);
+  assert.match(text, /测试用户：今天 挺好 的 真的/);
   assert.match(text, /\[时间未知\] 某人/);
 });
 

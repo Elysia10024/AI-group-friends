@@ -56,7 +56,7 @@ export function parseSinceMs(value, now = Date.now()) {
  * @param {string} [p.person] 只看某位群友的印象
  * @param {number} [p.sinceMs] 只看这个时间点之后的条目（0 = 不限）
  * @param {number} [p.max=8]
- * @returns {string[]} 每行一条，形如 `- [10-12] 在 群 20000001（对UserQ的）：他骂过我`
+ * @returns {string[]} 每行一条，形如 `- [10-12] 在 群 20000001（对Qruei的）：他骂过我`
  */
 export function recallAcrossConversations({ conversations = [], requesterKey = '', query = '', person = '', sinceMs = 0, max = 8 } = {}) {
   const q = String(query ?? '').trim();

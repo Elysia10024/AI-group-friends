@@ -11,7 +11,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 // 注意：不要用 new URL(import.meta.url).pathname —— 中文路径会被 percent-encode
-// （E:\ai%E7%BE%A4%E5%8F%8B\… → ENOENT）。fileURLToPath 才是对的。
+// （<项目根>\… → ENOENT）。fileURLToPath 才是对的。
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const TOOL_DIR = path.join(ROOT, 'src/mcp/tools');
 

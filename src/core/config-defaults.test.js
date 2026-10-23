@@ -66,7 +66,7 @@ test('聊天密度（densityWake）：默认值来自 core/msg-density.js，且�
   const one = loadWith(JSON.stringify({ socialV2: { densityWake: { dailyCap: 1 } } }));
   assert.equal(one.socialV2.densityWake.dailyCap, 1);
   assert.equal(one.socialV2.densityWake.minMessages, DENSITY_DEFAULTS.minMessages);
-  assert.equal(one.socialV2.densityWake.enabled, true);
+  assert.equal(one.socialV2.densityWake.enabled, DENSITY_DEFAULTS.enabled);
 });
 
 test('说说（qzone）默认值：默认开、一天 2 条、两次隔 2 小时、所有人可见、可配图、评论监听开着', () => {
