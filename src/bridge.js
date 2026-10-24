@@ -1147,6 +1147,14 @@ async function main() {
     qzonePromptText,
     // B 站订阅那一行（关注了谁 + 最近播报）：播报是桥接直接发的，她不知道；给一行事实。
     biliPromptText: () => (bilibiliMod ? bilibiliMod.promptText() : ''),
+    // 自刷视频那一轮的额外素材：是否凌晨「只刷不分享」、攒了哪些视频（biliScrollMod 在下面创建，
+    // 这些函数只在真正唤醒时被调用，那时它已经初始化）。
+    biliScrollMeta: () => biliScrollMod.shareMeta(),
+    // 自刷视频可以分享到哪些群（白名单群；分享由她挑 1~2 个）。
+    biliShareGroups: () => {
+      const ids = Array.isArray(cfg.allow?.groups) ? cfg.allow.groups : [];
+      return ids.map((id) => ({ key: `group:${id}` }));
+    },
     // 「你的说说下面有人评论了」那段（读一次就清，只在 qzoneComment 那次唤醒里取）。
     takeQzoneCommentNotice: takeCommentNotice,
     readRoleState,
@@ -1535,7 +1543,12 @@ async function main() {
     biliLook: biliLookMod,
   });
   biliScrollMod.start({
-    onWake: () => sendWakePromptV2(String(cfg.biliScroll?.groupKey || 'group:20000001'), 'biliScroll'),
+    // 唤醒的是「坐镇会话」；分享可以跨群（prompt 里给她白名单群列表，她挑 1~2 个发）。
+    // onWakeDelivered 在投递后清空待分享池：同一条视频不反复提（投递失败也清，最多丢一次分享机会）。
+    onWake: async () => {
+      await sendWakePromptV2(String(cfg.biliScroll?.groupKey || 'group:20000001'), 'biliScroll');
+      biliScrollMod.onWakeDelivered();
+    },
   });
   startConsoleServer({
     cfg,

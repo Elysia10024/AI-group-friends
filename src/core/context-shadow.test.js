@@ -23,6 +23,8 @@ function makeShadow({ shadow = true, stateThrows = false, writeThrows = false, s
     buildSlangContext: () => 'yyds=永远的神',
     cfg: { socialV2: { context: { assembler: { enabled: false, shadow } } }, slang: { injectMax: 8 } },
     formatMemoryV2: () => '她记得：上周答应画头像',
+    // 妈妈留言默认读真实 state 文件；测试注入空串做隔离（否则有真实留言的机器上 facts 非空）。
+    getMomBlock: () => '',
     getSocialV2State: () => { if (stateThrows) throw new Error('状态取不到'); return st; },
     log: (...a) => logs.push(a.join(' ')),
     readJsonSafe: () => ({ entries: written.flatMap((w) => w.entries).slice(0, -1) }),

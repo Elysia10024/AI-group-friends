@@ -89,6 +89,14 @@ export function createWakeModule(ctx) {
     // 空间评论也是"读一次就清"的内存态（见 ctx.takeQzoneCommentNotice 的注释）：
     // 只在这次唤醒就是因为评论时才取，别顺手把它吃掉。
     const qzoneComment = reason === 'qzoneComment' ? (takeQzoneCommentNotice?.() ?? null) : null;
+    // 自刷视频这一轮要带：现在是不是「只刷不分享」窗口、凌晨攒了哪些视频、可以发到哪些群。
+    // 数据都来自 bili-scroll 域（IO/状态在桥侧），这里只取一份快照交给纯渲染。
+    const biliScroll = reason === 'biliScroll'
+      ? {
+        ...(typeof ctx.biliScrollMeta === 'function' ? ctx.biliScrollMeta(key) : {}),
+        groups: typeof ctx.biliShareGroups === 'function' ? ctx.biliShareGroups() : []
+      }
+      : null;
     return buildWakePrompt({
       key,
       reason,
@@ -114,7 +122,8 @@ export function createWakeModule(ctx) {
       // A1.1 组装开启时：提示里的 context / memory / status 三段由**组装材料**负责，
       // 提示里就不再重复内联一遍（同一批信息发两遍，每遍都是按未命中单价算的）。
       assemblerOn: cfg.socialV2?.context?.assembler?.enabled === true,
-      redPacket
+      redPacket,
+      biliScroll
     });
   }
 

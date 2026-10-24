@@ -67,3 +67,26 @@ export function isIdleTime(now = Date.now(), opts = {}) {
   const peak = (hour >= 9 && hour < 12) || (hour >= 14 && hour < 18);
   return { idle: !peak, reason: peak ? 'peak' : 'off-peak', day, hour, minute };
 }
+
+/**
+ * 这一天有多少个"空闲小时"（2026-10-24 用户定：自刷配额按时间算，每小时 1 条）。
+ * 逐小时判断，工作日 17、周末/节假日 24（调休上班日按工作日算 17）。
+ * @param {number} [now]
+ * @param {object} [opts] 与 isIdleTime 相同（timezoneOffsetMinutes/holidays/makeupWorkdays）
+ * @returns {number} 0–24
+ */
+export function idleHoursOnDay(now = Date.now(), opts = {}) {
+  const offsetMin = Number.isFinite(Number(opts.timezoneOffsetMinutes))
+    ? Number(opts.timezoneOffsetMinutes)
+    : 480;
+  const d = new Date(Number(now) + offsetMin * 60 * 1000);
+  const y = d.getUTCFullYear();
+  const mo = d.getUTCMonth();
+  const da = d.getUTCDate();
+  let hours = 0;
+  for (let h = 0; h < 24; h++) {
+    const ts = Date.UTC(y, mo, da, h, 0, 0) - offsetMin * 60 * 1000;
+    if (isIdleTime(ts, opts).idle) hours++;
+  }
+  return hours;
+}

@@ -1,7 +1,7 @@
 // src/core/idle-time.js 的测试。跑法：npm test
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { isIdleTime } from './idle-time.js';
+import { isIdleTime, idleHoursOnDay } from './idle-time.js';
 
 // 北京时间 → 时间戳
 const bj = (s) => Date.parse(`${s}+08:00`);
@@ -42,4 +42,11 @@ test('自定义时区/节假日表可覆盖默认', () => {
   const r = isIdleTime(bj('2026-10-23T10:00:00'), { holidays: ['2026-10-23'] });
   assert.equal(r.idle, true);
   assert.equal(r.reason, 'holiday');
+});
+
+test('idleHoursOnDay：当天空闲小时数（自刷配额按时间算）', () => {
+  assert.equal(idleHoursOnDay(bj('2026-10-23T10:00:00')), 17, '工作日：24 - 高峰 7');
+  assert.equal(idleHoursOnDay(bj('2026-10-24T10:00:00')), 24, '周六全天空闲');
+  assert.equal(idleHoursOnDay(bj('2026-10-01T10:00:00')), 24, '国庆节假日');
+  assert.equal(idleHoursOnDay(bj('2026-10-10T10:00:00')), 17, '调休上班日按工作日');
 });

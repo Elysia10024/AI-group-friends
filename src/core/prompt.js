@@ -265,9 +265,29 @@ function renderReasonTail(ctx, scope) {
   }
   if (reason === 'biliScroll') {
     // 空闲时段（低价）自己刷视频：桥接只给"可以刷了"的由头，看不看、说什么都归她。
+    // 2026-10-24 用户定：每天配额按空闲小时数；凌晨 1~8 点只刷不分享（普通聊天照常），
+    // 刷到的攒进待分享池，8 点后挑 1~2 个群说自己的看法。
+    const bs = ctx.biliScroll || {};
+    const quiet = bs.quiet === true;
+    const pending = Array.isArray(bs.pending) ? bs.pending.slice(0, 6) : [];
+    const groups = Array.isArray(bs.groups) ? bs.groups : [];
+    const groupLine = groups.length
+      ? `【能发消息的群】${groups.map((g) => g.key).join('、')}——分享时挑 1~2 个群说，别每个群都发一遍。\n`
+      : '';
+    const pendingLine = pending.length
+      ? `【凌晨刷到、还没分享的】\n${pending.map((p) => `- ${p.title || p.bv}（${p.bv}）`).join('\n')}\n`
+        + `挑你真正觉得有意思的 1~2 条，现在跟群友说说你的看法；没兴趣就跳过，不用硬发。\n`
+      : '';
+    if (quiet) {
+      return `【空闲时间】${key}\n原因：现在是梁文谷的空闲时段（价格低谷），桥接给你一次"自己去刷会儿 B 站"的机会。\n`
+        + `【怎么做】想刷就调用 qq_bili_scroll 挑一个 5 分钟以内的短视频看看：它会返回标题/简介、按热度前 5 条评论，还有每 2 秒一张的截图（你能直接看到画面）。\n`
+        + `**现在是凌晨 1~8 点：刷完别在群里分享视频内容**，这轮先攒着，8 点后再挑着说。注意这只是"不分享视频"——群里有人找你、有人聊天，照常回，别装睡。\n`
+        + `不想刷、没看到感兴趣的，就安静收尾；想记一笔就 qq_memory_append。`;
+    }
     return `【空闲时间】${key}\n原因：现在是梁文谷的空闲时段（价格低谷），桥接给你一次"自己去刷会儿 B 站"的机会。\n`
       + `【怎么做】想刷就调用 qq_bili_scroll 挑一个 5 分钟以内的短视频看看：它会返回标题/简介、按热度前 5 条评论，还有每 2 秒一张的截图（你能直接看到画面）。\n`
       + `看完想说什么就在群里自然说一句（视频本身有意思的点、评论区在聊什么）；**不想说、没看到感兴趣的，就安静收尾**——这次机会不发言完全没问题，别为了刷而刷、也别硬凑一句。\n`
+      + `${pendingLine}${groupLine}`
       + `看完想记一笔就用 qq_memory_append 记成 activeTopic 或 pendingThought；别一天刷好几次，桥接会控制频率。`;
   }
   if (reason === 'redPacket') {

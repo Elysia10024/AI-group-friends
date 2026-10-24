@@ -301,10 +301,12 @@
   "biliScroll": {
     "enabled": false,
     "intervalMs": 3600000,
-    "maxPerDay": 6,
-    "maxWakePerDay": 6,
+    "maxPerDay": 0,
+    "maxWakePerDay": 0,
     "maxDurationSec": 300,
     "withFrames": true,
+    "shareQuietStart": 1,
+    "shareQuietEnd": 8,
     "groupKey": ""
   },
   "groupAdmins": {},

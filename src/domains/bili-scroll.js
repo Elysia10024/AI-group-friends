@@ -1,10 +1,12 @@
 // 空闲时间自己刷 B 站：热门挑一条 ≤5 分钟的短视频，抓简介/热度前 5 评论 + 每 2 秒一帧。
 //
-// 只在「梁文谷空闲时段」刷（core/idle-time.js）；每小时最多一次；每天有上限。
+// 只在「梁文谷空闲时段」刷（core/idle-time.js）；每小时最多一次。
+// 每天配额 = 当天空闲小时数（工作日 17、周末/节假日 24；见 core/bili-scroll.js）。
+// 凌晨 1:00–8:00 只刷不分享：刷到的先进待分享池（state.pending），8 点后再挑着分享。
 // 定时器只负责「叫她一次」；真正看视频要走 qq_bili_scroll 工具（配额校验在同一处）。
 import path from 'node:path';
-import { BILI_SCROLL_DEFAULTS, pickCandidate, scrollQuota } from '../core/bili-scroll.js';
-import { isIdleTime } from '../core/idle-time.js';
+import { BILI_SCROLL_DEFAULTS, appendShareItem, inShareQuietHours, pickCandidate, scrollQuota } from '../core/bili-scroll.js';
+import { idleHoursOnDay, isIdleTime } from '../core/idle-time.js';
 import { localDayKey } from '../core/local-day.js';
 
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
@@ -63,10 +65,15 @@ export function createBiliScrollModule(ctx) {
     const cand = pickCandidate(list, { maxDurationSec: Number(o.maxDurationSec) || 300 });
     if (!cand) throw new Error('热门里没挑到 5 分钟以内的视频');
     const out = await biliLook.watchBv(cand.bvid, { withFrames: o.withFrames !== false });
+    const prevCount = state.day === day ? Number(state.count) || 0 : 0;
     state.day = day;
-    state.count = (state.day === day ? Number(state.count) || 0 : 0) + 1;
+    state.count = prevCount + 1;
     state.lastAt = Date.now();
     state.lastBv = cand.bvid;
+    // 凌晨只刷不分享：先记进待分享池，8 点后再端给她（普通聊天不受影响）。
+    if (inShareQuietHours(Date.now(), o)) {
+      state.pending = appendShareItem(state.pending, { bv: cand.bvid, title: cand.title, at: Date.now() });
+    }
     save();
     biliLook.recordHistory({ bv: cand.bvid, title: cand.title, source: 'self', key, frames: out.images.length });
     log(`[bili-scroll] ${key} 自己刷了 ${cand.bvid}（${cand.duration}s，今天第 ${state.count} 次）`);
@@ -82,7 +89,9 @@ export function createBiliScrollModule(ctx) {
     if (now - lastWakeAt < Math.max(60000, Number(o.intervalMs) || BILI_SCROLL_DEFAULTS.intervalMs)) return;
     const day = localDayKey();
     const wakeCount = state.wakeDay === day ? Number(state.wakeCount) || 0 : 0;
-    if (wakeCount >= Math.max(1, Number(o.maxWakePerDay) || BILI_SCROLL_DEFAULTS.maxWakePerDay)) return;
+    // 唤醒配额和观看配额同一口径：显式给正数才用，否则按当天空闲小时数。
+    const wakeCap = Number(o.maxWakePerDay) > 0 ? Number(o.maxWakePerDay) : idleHoursOnDay(now);
+    if (wakeCount >= Math.max(1, wakeCap)) return;
     lastWakeAt = now;
     state.wakeDay = day;
     state.wakeCount = wakeCount + 1;
@@ -115,19 +124,41 @@ export function createBiliScrollModule(ctx) {
     if (timer) { clearInterval(timer); timer = null; }
   }
 
+  /**
+   * 给唤醒 prompt 用的分享素材：现在是否在「只刷不分享」窗口、攒着哪些视频。
+   * 静默窗口里 pending 一律不展示（凌晨刷的留着 8 点后再端出去）。
+   */
+  function shareMeta() {
+    const o = opts();
+    const quiet = inShareQuietHours(Date.now(), o);
+    return { quiet, pending: quiet ? [] : (Array.isArray(state.pending) ? state.pending.slice(-6) : []) };
+  }
+
+  /** 唤醒投递后调用：待分享的视频已经端给她了，清掉池子（同一条不反复提）。 */
+  function onWakeDelivered() {
+    if (!Array.isArray(state.pending) || !state.pending.length) return;
+    if (inShareQuietHours(Date.now(), opts())) return; // 静默期没端出去，留着
+    state.pending = [];
+    save();
+  }
+
   function status() {
     const t = isIdleTime();
+    const o = opts();
     return {
-      enabled: opts().enabled !== false,
+      enabled: o.enabled !== false,
       idle: t.idle,
       reason: t.reason,
       day: state.day,
       count: state.count,
       lastAt: state.lastAt,
       lastBv: state.lastBv,
-      wakeCount: state.wakeDay === localDayKey() ? state.wakeCount : 0
+      wakeCount: state.wakeDay === localDayKey() ? state.wakeCount : 0,
+      idleHours: idleHoursOnDay(),
+      shareQuiet: inShareQuietHours(Date.now(), o),
+      pendingShares: Array.isArray(state.pending) ? state.pending.length : 0
     };
   }
 
-  return { start, stop, scroll, status };
+  return { start, stop, scroll, status, shareMeta, onWakeDelivered };
 }

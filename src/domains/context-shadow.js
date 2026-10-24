@@ -45,6 +45,8 @@ export function createContextShadowModule(ctx) {
 
   const MAX_ENTRIES = 20;    // 影子里最多留最近 20 个回合（够核对，也不会撑大 state 目录）
   const MAX_RECENT = 40;     // 先取最近 40 条原文；再加长由组装器的字符上限兜底
+  // 妈妈留言的渲染默认读真实 state 文件（生产行为不变）；测试用 ctx.getMomBlock 注入空串做隔离。
+  const getMomBlock = typeof ctx.getMomBlock === 'function' ? ctx.getMomBlock : renderMomBlock;
 
   // 消息行的相对日子：跨天就标（minDays = 1），印象那边是 2 —— 两处共用 core 的 relativeDayLabel，
   // 只是门限不同。为什么消息行要跨天就标：这块叫"最近群聊"，最容易把昨天/前天的话读成"现在"
@@ -183,7 +185,9 @@ export function createContextShadowModule(ctx) {
     // 不清单化她就不知道图库里有什么，只能瞎猜名字；57 张只列名字+标签约 900 字，便宜且稳定。
     const facts = [
       // 妈妈留言（2026-10-22）：她给妈妈留的话，妈妈回来的一两句——最显眼的位置。
-      roleplay ? '' : renderMomBlock(),
+      // 可注入（ctx.getMomBlock）：测试必须能在不依赖真实 state/mom-channel.json 的情况下跑，
+      // 否则「facts 块为空」那两条断言会在有真实留言的机器上变红（2026-10-24 修）。
+      roleplay ? '' : getMomBlock(),
       // 会话级"地方设定"（这个群/这个私聊的氛围、熟人、规矩）放最前面：它比图库清单更"当前"。
       typeof getOverlay === 'function' ? getOverlay(key) : '',
       // 本会话提到、但印象记在**别的会话**里的人 → 补一小块（否则私聊里会出现"XXX 又是谁啊"）。
