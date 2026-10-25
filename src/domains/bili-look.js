@@ -281,7 +281,7 @@ export function createBiliLookModule(ctx) {
       if (images.length) text += `\n（附 ${images.length} 张拼图：每张 20 帧，按时间从左到右、从上到下）`;
       if (framesNote) text += `\n（画面没抽出来：${framesNote}）`;
     }
-    return { text, images, framesNote, view };
+    return { text, images, framesNote, view, comments };
   }
 
   /**

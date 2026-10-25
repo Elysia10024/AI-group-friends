@@ -35,7 +35,7 @@ export function registerBiliTools(server, { agentApi }) {
 
   server.tool(
     'qq_bili_scroll',
-    '空闲时间自己刷 B 站：挑一个 5 分钟以内的热门短视频看（标题/简介/热度前 5 评论 + 每 2 秒一张截图）。只在空闲时段可用，每小时最多一次，每天有上限。',
+    '空闲时间自己刷 B 站：挑一个 5 分钟以内的热门短视频看（标题/简介/热度前 5 评论 + 每 2 秒一张截图）。只在空闲时段可用，每小时最多一次，每天有上限。看完会自动把这条视频的标题/简介/热评选进你的「看过的视频」笔记（以后能想起来）；想留自己的想法用 qq_memory_append 另记。',
     {
       key: z.string().describe('会话 key，格式 group:群号 或 private:QQ号'),
       token: z.string().describe('会话令牌（**必填**，漏传会被拒；见唤醒提示中的【会话令牌】）')

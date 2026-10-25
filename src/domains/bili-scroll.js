@@ -6,6 +6,7 @@
 // 定时器只负责「叫她一次」；真正看视频要走 qq_bili_scroll 工具（配额校验在同一处）。
 import path from 'node:path';
 import { BILI_SCROLL_DEFAULTS, appendShareItem, inShareQuietHours, pickCandidate, scrollQuota } from '../core/bili-scroll.js';
+import { appendNote, makeNote } from '../core/bili-notes.js';
 import { idleHoursOnDay, isIdleTime } from '../core/idle-time.js';
 import { localDayKey } from '../core/local-day.js';
 
@@ -14,6 +15,8 @@ const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML,
 export function createBiliScrollModule(ctx) {
   const { cfg, log, stateDir, readJsonSafe, atomicWriteJson, biliLook } = ctx;
   const stateFile = path.join(stateDir, 'bili-scroll.json');
+  // 看过的视频笔记（2026-10-25）：独立文件，和配额状态分开，方便以后单独检索/注入材料。
+  const notesFile = path.join(stateDir, 'bili-notes.json');
   let state = readJsonSafe(stateFile, { version: 1 });
   if (!state || typeof state !== 'object' || Array.isArray(state)) state = { version: 1 };
 
@@ -76,8 +79,33 @@ export function createBiliScrollModule(ctx) {
     }
     save();
     biliLook.recordHistory({ bv: cand.bvid, title: cand.title, source: 'self', key, frames: out.images.length });
+    // 看过的视频落成结构化笔记（内容摘要 + 热评）：只活在当轮上下文里太浪费，
+    // 存下来以后才能检索、回灌材料（2026-10-25 第 1 步；她的看法仍走 qq_memory_append）。
+    let noted = false;
+    try {
+      const note = makeNote({
+        bv: cand.bvid,
+        title: cand.title,
+        tname: cand.tname,
+        owner: out.view?.owner?.name,
+        duration: cand.duration,
+        desc: out.view?.desc,
+        comments: out.comments,
+        key,
+        at: Date.now()
+      });
+      if (note) {
+        const store = readJsonSafe(notesFile, { version: 1, notes: [] });
+        const notes = appendNote(Array.isArray(store?.notes) ? store.notes : [], note);
+        atomicWriteJson(notesFile, { version: 1, notes });
+        noted = true;
+        log(`[bili-notes] 记下 ${cand.bvid}（共 ${notes.length} 条）`);
+      }
+    } catch (error) {
+      log(`[bili-notes] 笔记写入失败：${error?.message ?? error}`);
+    }
     log(`[bili-scroll] ${key} 自己刷了 ${cand.bvid}（${cand.duration}s，今天第 ${state.count} 次）`);
-    return { text: out.text, images: out.images, bv: cand.bvid, title: cand.title };
+    return { text: out.text, images: out.images, bv: cand.bvid, title: cand.title, noted };
   }
 
   async function tick(onWake) {

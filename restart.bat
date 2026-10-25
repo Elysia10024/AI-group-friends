@@ -12,5 +12,9 @@ REM `timeout` breaks when stdin is redirected (e.g. launched from a script);
 REM PowerShell sleep works everywhere.
 powershell -NoProfile -Command "Start-Sleep -Seconds 2"
 del state\bridge.lock 2>nul
-start "" cmd /c start.bat
-echo Guard window started.
+REM Start hidden (no console window). The QQBridge-Watchdog scheduled task keeps
+REM restarting the bridge if it dies, so the visible start.bat guard window is no
+REM longer needed for normal use (start.bat stays as the debug entry).
+powershell -NoProfile -Command "Start-Process -FilePath 'E:\node.js\node.exe' -ArgumentList 'src\bridge.js' -WorkingDirectory '%CD%' -WindowStyle Hidden -RedirectStandardOutput '%CD%\..\logs\bridge.out.log' -RedirectStandardError '%CD%\..\logs\bridge.err.log'"
+echo Bridge started (hidden). Logs: state\bridge.log
+powershell -NoProfile -Command "Start-Sleep -Seconds 6"
