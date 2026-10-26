@@ -173,9 +173,11 @@ export function createWakeModule(ctx) {
       return;
     }
     // 唤醒频率硬限制：超限则跳过本次唤醒，避免成本失控。
-    // 【关键】必须回的原因（@/叫名字/拍一拍/私聊）绝不能被普通配额挤掉——被跳过就等于"她没理人"，
+    // 【关键】必须回的原因（@/叫名字/私聊）绝不能被普通配额挤掉——被跳过就等于"她没理人"，
     // 而 probability/question 这类可选唤醒被跳过无所谓。所以必须回的走一套宽松得多的独立硬顶。
-    const MUST_WAKE_REASONS = new Set(['atMention', 'nameMention', 'poke', 'private', 'followUp', 'redPacket']);
+    // 拍一拍不在名单里（2026-10-26 用户要求）：被戳烦了允许她不理/沉默/装死，@ 仍然必须回。
+    // 降级后 poke 走普通唤醒路径：受普通配额与按会话静音约束，而且她本人在提示词层面也有权不回。
+    const MUST_WAKE_REASONS = new Set(['atMention', 'nameMention', 'private', 'followUp', 'redPacket']);
     const mustWake = MUST_WAKE_REASONS.has(reason);
     // 按会话静音（/安静，群管理员也有权）：这个群里她已经"不说话了"，**定时器自己找上门的
     // 唤醒必须一起停**（主动冒泡 / 回复检查 / 潜水到期 / 概率…）——否则"关了聊天"她还会自己
