@@ -46,33 +46,53 @@ function roleExists(name) {
   return fs.existsSync(path.join(ROOT, 'roles', safe, 'core.md')) || fs.existsSync(path.join(ROOT, 'roles', safe + '.md'));
 }
 
-// 读取角色/模式状态。支持**按群角色**（2026-10-27 用户要求）：
+// 读取角色/模式状态。支持**按群角色**（2026-10-27 用户要求，第二轮：不同群不同人格）：
 //   · 全局 role/mode = 私聊和没覆盖的群（默认是小鲸鱼）；
-//   · groupRole = 群聊默认覆盖（比如「鲸鲸宝宝」= 群宠物）；
-//   · 传 key 时：group:* 且 groupRole 存在 → 返回 groupRole 视角；private 或无覆盖 → 全局。
-// 这样同一个号可以「群里是宠物、私聊是小鲸鱼」，不用改所有群的配置。
+//   · groupOverrides = 单群覆盖（{ "group:20000001": "鲸鲸宝宝" }）——优先级最高；
+//   · groupRole = 群聊默认覆盖（历史遗留；一般不用，保留兼容）；
+//   · 传 key 时：group:* → groupOverrides[key] ?? groupRole ?? 全局；private → 全局。
+// 现状：宠物在主群（20000001），小鲸鱼在 20000003 等其余群/私聊。
 function readRoleState(key) {
   const st = readJsonSafe(ROLE_STATE_FILE, { role: null, mode: 'active' });
+  const overrides = st?.groupOverrides && typeof st.groupOverrides === 'object' && !Array.isArray(st.groupOverrides)
+    ? st.groupOverrides
+    : {};
   const base = {
     role: st?.role ?? null,
     mode: st?.mode ?? 'active',
     groupRole: st?.groupRole ?? null,
+    groupOverrides: overrides,
     previous: st?.previous,
     switchedAt: st?.switchedAt
   };
   const k = String(key ?? '').trim();
-  if (k.startsWith('group:') && base.groupRole) {
-    return { ...base, role: base.groupRole };
+  if (k.startsWith('group:')) {
+    const own = overrides[k];
+    if (own) return { ...base, role: own };
+    if (base.groupRole) return { ...base, role: base.groupRole };
   }
   return base;
 }
-// 写角色状态：默认写全局；opts.group === true 时写「群聊默认角色」（groupRole）。
+// 写角色状态：默认写全局；opts.group === true 写「群聊默认角色」（groupRole）；
+// opts.groupKey = 'group:xxx' 时写「这个群的单独角色」（groupOverrides；role=null 表示删除该覆盖）。
 function writeRoleState(role, mode, opts = {}) {
   const st = readJsonSafe(ROLE_STATE_FILE, { role: null, mode: 'active' });
   const next = { ...st };
   const nextRole = role ?? null;
-  const isGroup = opts?.group === true;
-  if (isGroup) {
+  const groupKey = String(opts?.groupKey ?? '').trim();
+  if (groupKey.startsWith('group:')) {
+    const overrides = st?.groupOverrides && typeof st.groupOverrides === 'object' && !Array.isArray(st.groupOverrides)
+      ? { ...st.groupOverrides }
+      : {};
+    const prevOwn = overrides[groupKey] ?? null;
+    if (prevOwn !== nextRole) {
+      next.previous = prevOwn;
+      next.switchedAt = Date.now();
+    }
+    if (nextRole) overrides[groupKey] = nextRole;
+    else delete overrides[groupKey];
+    next.groupOverrides = overrides;
+  } else if (opts?.group === true) {
     const prevGroup = st?.groupRole ?? null;
     if (prevGroup !== nextRole) {
       next.previous = prevGroup;
