@@ -52,11 +52,11 @@ export function createSessionModule(ctx) {
   }
 
   async function ensureSession(key) {
-    const epoch = ctx.sessionEpoch;
+    const epoch = ctx.flags.sessionEpoch;
     const existing = state.sessions[key];
     if (existing) {
       // reset/清空工作区期间旧映射可能尚未清理；发现代际不匹配必须丢弃旧会话，防止复活。
-      if (epoch !== ctx.sessionEpoch) {
+      if (epoch !== ctx.flags.sessionEpoch) {
         delete state.sessions[key];
         if (reverse.get(existing) === key) reverse.delete(existing);
         try { await api.workspace.archiveSession({ sessionId: existing }); } catch { /* 归档旧会话是清理动作，失败不影响新会话建立 */ }
@@ -79,7 +79,7 @@ export function createSessionModule(ctx) {
             await api.workspace.rename({ workspaceId: wsValue.workspace.workspaceId, title: cfg.workspaceTitle });
           }
           const params = { workspaceId: wsValue.workspace.workspaceId };
-          const preset = modePreset(key, ctx.currentMode, cfg);
+          const preset = modePreset(key, ctx.flags.currentMode, cfg);
           if (withPreset && preset) params.agentPreset = preset;
           const value = unwrap(await api.sessions.create(params), 'session.create');
           sessionId = value.sessionId;
@@ -94,7 +94,7 @@ export function createSessionModule(ctx) {
         sessionId = value.sessionId;
       }
       // reset/清空工作区期间创建完成：丢弃，防止旧会话复活
-      if (epoch !== ctx.sessionEpoch) {
+      if (epoch !== ctx.flags.sessionEpoch) {
         log(`会话创建期间发生 reset，丢弃 ${key} 的新会话（${sessionId}）`);
         try { await api.workspace.archiveSession({ sessionId }); } catch { /* 同上：归档失败不影响当前这次会话建立 */ }
         throw new Error('会话创建期间已重置，丢弃新会话');
@@ -103,7 +103,7 @@ export function createSessionModule(ctx) {
       reverse.set(sessionId, key);
       saveState();
       await ensureVisionModel(sessionId);
-      log(`新会话 ${key} -> ${sessionId}（模式 ${ctx.currentMode}，preset: ${modePreset(key, ctx.currentMode, cfg) ?? '默认'}）`);
+      log(`新会话 ${key} -> ${sessionId}（模式 ${ctx.flags.currentMode}，preset: ${modePreset(key, ctx.flags.currentMode, cfg) ?? '默认'}）`);
       return sessionId;
     })();
     sessionPromises.set(key, promise);

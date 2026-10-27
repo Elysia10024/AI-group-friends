@@ -21,6 +21,7 @@ export function createRuntimeModule(ctx) {
     STATE_DIR,
     STATE_FILE,
     appendCappedLine,
+    atomicWriteJson,
     atomicWriteText,
     crypto,
     fs,
@@ -69,10 +70,9 @@ function loadState() {
   else ctx.state = { sessions: {} };
 }
 function saveState() {
-  fs.mkdirSync(STATE_DIR, { recursive: true });
-  const tmp = STATE_FILE + '.tmp';
-  fs.writeFileSync(tmp, JSON.stringify(ctx.state, null, 2));
-  fs.renameSync(tmp, STATE_FILE);
+  // 2026-10-27 第 1 期：统一走 state-io 原子写（known-issues BUG-003 解除：
+  // 末尾换行与 0600 是纯改善，readJsonSafe 不受影响；固定 tmp 名正是 state-io 明令禁止的写法）。
+  ctx.atomicWriteJson(STATE_FILE, ctx.state);
 }
 function acquireLock() {
   fs.mkdirSync(STATE_DIR, { recursive: true });

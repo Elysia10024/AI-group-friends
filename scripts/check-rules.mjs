@@ -12,8 +12,9 @@
 // 跑法： npm run check:rules
 import fs from 'node:fs';
 import path from 'node:path';
+import { PROJECT_ROOT } from './lib/paths.mjs';
 
-const ROOT = '<项目根>';
+const ROOT = PROJECT_ROOT;
 const fail = [];
 const warn = [];
 const ok = [];
@@ -73,7 +74,9 @@ const cfg = JSON.parse(read(path.join(ROOT, 'config.json')) || '{}');
   // 关键数字的唯一来源是 config；文案里出现的这些数字必须与 config 一致
   const want = [
     { name: '单条字数上限', text: /≤\s*(\d+)\s*字/g, expect: Number(cfg?.socialV2?.voiceOut?.maxChars ?? 20) },
-    { name: '分条上限', text: /最多\s*(\d+)\s*条/g, expect: 3 },
+    // 2026-10-27：限定到分条语境。R-27 的「每小时最多 1 条」是空闲自刷（qq_bili_scroll）
+    // 的每小时配额，不是单次发送的条数上限；不区分会让守卫天天假红——常红的守卫等于没有守卫。
+    { name: '分条上限', text: /最多\s*(\d+)\s*条/g, expect: 3, skip: /每小时|空闲自刷|qq_bili_scroll/ },
     { name: '记忆条数', text: /每次唤醒最多\s*(\d+)\s*条|记\s*(\d+)\s*[~～-]\s*(\d+)\s*条/g, expect: 2 },
     // 图与表情：2026-10-03 起改成「相关就发、语境刹车」，不再按轮次限频；
     // 所以这里反过来查——文案里不该再出现轮次频率（否则又会和人格打架）。
@@ -96,6 +99,8 @@ const cfg = JSON.parse(read(path.join(ROOT, 'config.json')) || '{}');
       const line = lineOf(m[0]);
       // 这一行说的是别的功能（空间评论）→ 交给下面的行级检查，别用消息的限制去套它
       if (lineScoped.some((s) => s.subject.test(line))) continue;
+      // 这一行说的是别的概念的配额（如每小时配额）→ 别用分条上限去套它
+      if (w.skip && w.skip.test(line)) continue;
       const nums = m.slice(1).filter(Boolean).map(Number);
       if (!nums.includes(w.expect)) {
         fail.push(`数字不一致：${w.name} 规则里写的是「${m[0]}」，应为 ${w.expect}（${line.trim().slice(0, 60)}…）`);

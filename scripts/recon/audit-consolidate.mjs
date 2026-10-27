@@ -1,7 +1,8 @@
 // 勘察"可整合项"：找出同一概念的多套实现、死掉的分支、重复的路由族
 import fs from 'node:fs';
+import { projectPath } from '../lib/paths.mjs';
 
-const SRC = '<项目根>/src/bridge.js';
+const SRC = projectPath('src/bridge.js');
 const src = fs.readFileSync(SRC, 'utf8');
 const lines = src.split('\n');
 
@@ -39,7 +40,7 @@ for (const [label, re] of probes) {
 }
 
 console.log('\n=========== 3) 当前生效的模式（state/mode.json + 运行时）===========');
-for (const f of ['<项目根>/state/mode.json', '<项目根>/state/current-role.json']) {
+for (const f of [projectPath('state/mode.json'), projectPath('state/current-role.json')]) {
   if (fs.existsSync(f)) console.log('  ' + f.split('/').pop() + ': ' + fs.readFileSync(f, 'utf8').trim().slice(0, 200));
   else console.log('  ' + f.split('/').pop() + ': （不存在）');
 }

@@ -12,6 +12,8 @@
 // 搬迁时用"逆变换逐字还原原文"证明过这一点。
 import { isChatMuted } from '../core/mute.js';
 
+import { createOneBotClient } from '../core/onebot.js';
+
 export function createSendPathModule(ctx) {
   const {
     KNOWN_AGENT_TOKENS,
@@ -93,6 +95,7 @@ export function createSendPathModule(ctx) {
   }
 
 
+  const onebot = createOneBotClient({ cfg });
   async function onebotSend(kind, id, message, replyToMessageId, atUserId = null) {
     const segments = [];
     if (replyToMessageId !== undefined && replyToMessageId !== null && String(replyToMessageId).trim() !== '') {
@@ -115,22 +118,8 @@ export function createSendPathModule(ctx) {
     segments.push({ type: 'text', data: { text: escapeCqText(rawMessage) } });
     const action = kind === 'private' ? 'send_private_msg' : 'send_group_msg';
     const params = kind === 'private' ? { user_id: Number(id), message: segments } : { group_id: Number(id), message: segments };
-    const httpUrl = String(cfg.snowluma?.httpUrl || 'http://127.0.0.1:3000').replace(/\/+$/, '');
-    const res = await fetch(`${httpUrl}/${action}`, {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        ...(cfg.snowluma?.accessToken ? { authorization: `Bearer ${cfg.snowluma.accessToken}` } : {})
-      },
-      body: JSON.stringify(params),
-      signal: AbortSignal.timeout(15000)
-    });
-    const body = await res.json().catch(() => ({}));
-    if (!res.ok || body.status !== 'ok' || body.retcode !== 0) {
-      const hint = res.status === 426 ? '（HTTP 426：snowluma.httpUrl 可能指向了 WebSocket 端口，请检查 config.json 的 snowluma.httpUrl 是否为 OneBot HTTP API 地址）' : '';
-      throw new Error(`OneBot ${action} 失败: ${body.wording || body.retcode || res.status}${hint}`);
-    }
-    return body.data;
+    // 第 5 期 5b：请求实现统一在 core/onebot.js（send 用长版 426 提示、15s 超时，逐字保留）。
+    return onebot.call(action, params, { timeoutMs: 15000, hint426: 'long' });
   }
   // 间隔计算的纯逻辑已抽到 src/core/send.js（clampGap 也随之搬走，这里不再需要它）。
   function computeGapsV2(messages, gapMode, gapMs, gaps, sendCfg) {
@@ -170,7 +159,7 @@ export function createSendPathModule(ctx) {
 
   // 审计范围：closed-agent 仅对 owner 私聊跳过；其余模式/会话一律审计
   function shouldAuditKey(key) {
-    if (ctx.currentMode === 'closed-agent') {
+    if (ctx.flags.currentMode === 'closed-agent') {
       return !(key === `private:${String(cfg.ownerQQ ?? '')}`);
     }
     return true;

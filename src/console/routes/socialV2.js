@@ -19,7 +19,7 @@ import { mentionLabel } from '../../core/mention-label.js';
 /**
  * 覆盖 6 条路由，原 L1214–L1571
  */
-export async function handleSocialV21(ctx) {
+export async function handleSocialV2ReadWrite(ctx) {
   const {
     agentTokenOk,
     allowedKeywordsRawV2,
@@ -166,7 +166,7 @@ export async function handleSocialV21(ctx) {
         ok: true,
         key,
         time: new Date().toISOString(),
-        role: { name: roleState.role ?? null, hint: deps.currentMode === 'reserved2' ? currentRoleHintV2() : currentRoleHint() },
+        role: { name: roleState.role ?? null, hint: deps.flags.currentMode === 'reserved2' ? currentRoleHintV2() : currentRoleHint() },
         recommended: cfg.socialV2?.provideRecommendations === false ? null : {
           wake: cfg.socialV2?.wake ?? {},
           send: cfg.socialV2?.send ?? {},
@@ -183,12 +183,12 @@ export async function handleSocialV21(ctx) {
         slang: {
           enabled: cfg.slang?.enabled !== false,
           entries: confirmedSlangListV2(),
-          block: buildSlangContext(deps.slangEntries, cfg.slang?.injectMax ?? 8)
+          block: buildSlangContext(deps.flags.slangEntries, cfg.slang?.injectMax ?? 8)
         },
         stickers: {
           enabled: cfg.socialV2?.sticker?.enabled !== false,
-          total: deps.stickerEntries.length,
-          context: cfg.socialV2?.sticker?.includeInPrompt !== false ? buildStickerContext(deps.stickerEntries, cfg.socialV2?.sticker?.promptMaxStickers ?? 8) : '',
+          total: deps.flags.stickerEntries.length,
+          context: cfg.socialV2?.sticker?.includeInPrompt !== false ? buildStickerContext(deps.flags.stickerEntries, cfg.socialV2?.sticker?.promptMaxStickers ?? 8) : '',
           strategy: cfg.socialV2?.sticker?.includeInPrompt !== false ? buildStickerStrategyHint() : ''
         }
       });
@@ -457,7 +457,7 @@ export async function handleSocialV21(ctx) {
 /**
  * 覆盖 6 条路由，原 L2371–L2438
  */
-export async function handleSocialV22(ctx) {
+export async function handleSocialV2LogsFeedback(ctx) {
   const {
     FEEDBACK_FILE,
     TOOL_LOG_FILE,
@@ -584,7 +584,7 @@ export async function handleSocialV22(ctx) {
 /**
  * 覆盖 1 条路由，原 L2443–L2492
  */
-export async function handleSocialV23(ctx) {
+export async function handleSocialV2MessageDetail(ctx) {
   const {
     agentTokenOk,
     getSocialV2State,
@@ -656,7 +656,7 @@ export async function handleSocialV23(ctx) {
 /**
  * 覆盖 1 条路由，原 L2603–L2627
  */
-export async function handleSocialV24(ctx) {
+export async function handleSocialV2ActiveMembers(ctx) {
   const {
     agentTokenOk,
     getSocialV2State,

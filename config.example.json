@@ -15,8 +15,8 @@
     "wsUrl": "ws://127.0.0.1:3001",
     "httpUrl": "http://127.0.0.1:3000",
     "accessToken": "<在这里填你自己的值>",
-    "launcherPath": "E:\\ai群友\\SnowLuma\\launcher.bat",
-    "homeDir": "E:\\ai群友\\SnowLuma",
+    "launcherPath": "<项目根>\\SnowLuma\\launcher.bat",
+    "homeDir": "<项目根>\\SnowLuma",
     "allowProcessControl": false
   },
   "ownerQQ": 10000001,

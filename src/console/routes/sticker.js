@@ -15,7 +15,7 @@
 /**
  * 覆盖 4 条路由，原 L1928–L2016
  */
-export async function handleSticker1(ctx) {
+export async function handleStickerImageRoutes(ctx) {
   const {
     MAX_MEDIA_BYTES,
     MAX_MEDIA_PIXELS,
@@ -228,7 +228,7 @@ export async function handleSticker1(ctx) {
 /**
  * 覆盖 6 条路由，原 L2106–L2221
  */
-export async function handleSticker2(ctx) {
+export async function handleStickerCollectRoutes(ctx) {
   const {
     agentTokenOk,
     appendActivity,
@@ -323,13 +323,13 @@ export async function handleSticker2(ctx) {
       // AI 强制刷新加最小间隔，避免反复调用 OneBot 表情接口造成限频/负载。
       if (req.headers['x-agent-token'] && force) {
         const now = Date.now();
-        if (now - deps.lastForcedAgentStickerSync < 10000) force = false;
-        else deps.lastForcedAgentStickerSync = now;
+        if (now - deps.flags.lastForcedAgentStickerSync < 10000) force = false;
+        else deps.flags.lastForcedAgentStickerSync = now;
       }
       try {
         const synced = await syncStickerLibrary(force);
-        const list = formatStickerList(synced?.entries ?? deps.stickerEntries, query, count);
-        sendJson({ ok: true, key, ...list, syncedAt: synced?.syncedAt ?? deps.stickerSyncedAt, fromCache: synced?.fromCache ?? false });
+        const list = formatStickerList(synced?.entries ?? deps.flags.stickerEntries, query, count);
+        sendJson({ ok: true, key, ...list, syncedAt: synced?.syncedAt ?? deps.flags.stickerSyncedAt, fromCache: synced?.fromCache ?? false });
       } catch (error) {
         sendJson({ ok: false, error: `获取表情列表失败：${error?.message ?? error}` }, 500);
       }
@@ -347,8 +347,8 @@ export async function handleSticker2(ctx) {
       const force = url.searchParams.get('refresh') === '1' || url.searchParams.get('refresh') === 'true';
       try {
         const synced = await syncStickerLibrary(force);
-        const list = formatStickerList(synced?.entries ?? deps.stickerEntries, query, count);
-        sendJson({ ok: true, ...list, syncedAt: synced?.syncedAt ?? deps.stickerSyncedAt, fromCache: synced?.fromCache ?? false });
+        const list = formatStickerList(synced?.entries ?? deps.flags.stickerEntries, query, count);
+        sendJson({ ok: true, ...list, syncedAt: synced?.syncedAt ?? deps.flags.stickerSyncedAt, fromCache: synced?.fromCache ?? false });
       } catch (error) {
         sendJson({ ok: false, error: `获取表情失败：${error?.message ?? error}` }, 500);
       }
@@ -361,7 +361,7 @@ export async function handleSticker2(ctx) {
     if (req.method === 'POST' && url.pathname === '/api/stickers/sync') {
       try {
         const synced = await syncStickerLibrary(true);
-        sendJson({ ok: true, total: synced?.entries?.length ?? deps.stickerEntries.length, syncedAt: synced?.syncedAt ?? deps.stickerSyncedAt });
+        sendJson({ ok: true, total: synced?.entries?.length ?? deps.flags.stickerEntries.length, syncedAt: synced?.syncedAt ?? deps.flags.stickerSyncedAt });
       } catch (error) {
         sendJson({ ok: false, error: `同步表情失败：${error?.message ?? error}` }, 500);
       }

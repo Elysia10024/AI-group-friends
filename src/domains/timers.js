@@ -18,6 +18,7 @@ import { localDayKey } from '../core/local-day.js';
 export function createTimersModule(ctx) {
   const {
     cfg,
+    registry,
     ensureWakeableV2,
     getSocialV2State,
     isConversationBusyV2,
@@ -43,7 +44,7 @@ export function createTimersModule(ctx) {
 
   function scheduleProactiveCheckV2(key) {
     if (cfg.socialV2?.proactive?.enabled === false) return;
-    if (socialV2.paused || ctx.currentMode !== 'reserved2') return;
+    if (socialV2.paused || ctx.flags.currentMode !== 'reserved2') return;
     if (!isSessionAllowedInCurrentMode(key)) return;
     const st = getSocialV2State(key);
     if (st.proactiveTimer) return;
@@ -138,7 +139,7 @@ export function createTimersModule(ctx) {
       densityTriggerState.clear();
       return;
     }
-    if (socialV2.paused || ctx.currentMode !== 'reserved2') return;
+    if (socialV2.paused || ctx.flags.currentMode !== 'reserved2') return;
     const now = Date.now();
     const hour = new Date(now).getHours();   // 本地小时在**调用侧**取：纯函数内部不许读时钟
     const today = localDayKey(now);          // 本地日（不是 UTC 日）：否则额度会在早上 8 点偷偷刷新
@@ -207,11 +208,8 @@ export function createTimersModule(ctx) {
     stopDensityCheck();
     densityStamps.clear();
     densityTriggerState.clear();
-    pendingWakeKeys.clear();
-    wakeConfigUpdatedKeys.clear();
-    markReadCalledKeys.clear();
-    wakeConfigMissCount.clear();
-    messageMediaStore.clear();
+    // 这 5 个 conv store 的整表清走登记处（第 2 期）：与 wipeConversation / pump 断线同一张名单，单一真相源。
+    registry.clearStores(['pendingWakeKeys', 'wakeConfigUpdatedKeys', 'markReadCalledKeys', 'wakeConfigMissCount', 'messageMediaStore']);
   }
 
   function drainPromptQueue(key, errorMsg) {

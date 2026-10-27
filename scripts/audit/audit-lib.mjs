@@ -11,10 +11,11 @@
 import fs from 'node:fs';
 import zlib from 'node:zlib';
 import path from 'node:path';
+import { aiqunyouPath } from '../lib/paths.mjs';
 
 // 会话根目录可用环境变量覆盖：复现/测试时把某个会话冻结成副本，
 // 才能证明"改造前后数字一致"（会话文件在被 DSH 实时追加，直接比对会天然失真）。
-export const SESSIONS_ROOT = process.env.AUDIT_SESSIONS_ROOT || '<项目根>/dsh-home-legacy/sessions';
+export const SESSIONS_ROOT = process.env.AUDIT_SESSIONS_ROOT || aiqunyouPath('dsh-home-legacy/sessions');
 export const MAIN_WORKSPACE = 'qq-bridge-main-state-agents';
 const ZSTD_MAGIC = Buffer.from([0x28, 0xb5, 0x2f, 0xfd]);
 

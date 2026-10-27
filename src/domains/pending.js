@@ -139,14 +139,14 @@ export function createPendingModule(ctx) {
       id = String(peer);
       key = convKey('private', id);
     }
-    if (!modeAllowed(key, kind, id, cfg, ctx.currentMode)) return;
+    if (!modeAllowed(key, kind, id, cfg, ctx.flags.currentMode)) return;
     // 「不理某人」名单（socialV2.ignoreUsers）：名单里的人拍她也不叫醒、不进消息流。
     // 判定与群消息入站共用 src/core/ignore-users.js（一处改、两处一致）。
     if (isIgnoredUser(cfg.socialV2?.ignoreUsers, senderId)) {
       appendActivity(`${key} 忽略名单：${senderId} 的拍一拍不处理`);
       return;
     }
-    if (ctx.currentMode !== 'reserved2') {
+    if (ctx.flags.currentMode !== 'reserved2') {
       appendActivity(`${key} 收到拍一拍事件（非 reserved2，仅记录）：${senderId} -> ${targetId}`);
       return;
     }
@@ -180,12 +180,12 @@ export function createPendingModule(ctx) {
     appendActivity(`${key} 拍一拍事件：${msg.text.slice(0, 80)}`);
     // 角色扮演（古早笨 AI/宠物）期间：被戳固定回「在呢」——不叫模型、不嫌烦，戳一万次也一样。
     // 2026-10-27 用户要求：机械式问答，越笨越好；这条在桥接层硬实现，零模型成本。
-    const roleNow = String((typeof readRoleState === 'function' ? readRoleState(key)?.role : '') ?? '').trim();
+    const roleNow = String(readRoleState(key)?.role ?? '').trim();
     if (targetIsSelf && roleNow && roleNow !== '小鲸鱼') {
       try { await sendToQQ(key, '在呢'); } catch (e) { log(`拍一拍固定应答失败 ${key}: ${e?.message ?? e}`); }
       return;
     }
-    if (ctx.currentMode !== 'reserved2') return;
+    if (ctx.flags.currentMode !== 'reserved2') return;
     if (socialV2.paused) return;
     const st = getSocialV2State(key);
     if (!st.bootstrapSent) {

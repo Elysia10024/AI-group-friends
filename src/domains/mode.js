@@ -15,6 +15,7 @@ import { adminGroupsOf } from '../core/group-admin.js';
 export function createModeModule(ctx) {
   const {
     STATE_DIR,
+    isRoleplaying,
     VALID_MODES,
     allowed,
     api,
@@ -34,7 +35,7 @@ export function createModeModule(ctx) {
       const s = unwrap(await api.settings.describe({}), 'settings.describe');
       const ns = s.namespaces.find((n) => n.ns === 'qq-mode');
       if (ns?.value && typeof ns.value.mode === 'string' && VALID_MODES.includes(ns.value.mode)) {
-        ctx.currentMode = ns.value.mode;
+        ctx.flags.currentMode = ns.value.mode;
         // DSH 设置页也可配置管理员 QQ；未设置该字段时不覆盖 config.json。
         if (ns.value.ownerQQ !== undefined) {
           try {
@@ -47,9 +48,9 @@ export function createModeModule(ctx) {
       }
     } catch { /* 读 DSH 设置失败就往下走、改用本地 state/mode.json —— 这是预期的回退路径 */ }
     const local = readJsonSafe(path.join(STATE_DIR, 'mode.json'), null);
-    if (local?.mode && VALID_MODES.includes(local.mode)) ctx.currentMode = local.mode;
+    if (local?.mode && VALID_MODES.includes(local.mode)) ctx.flags.currentMode = local.mode;
     if (typeof local?.closedAgentPreset === 'string' && local.closedAgentPreset) {
-      ctx.closedAgentPreset = local.closedAgentPreset;
+      ctx.flags.closedAgentPreset = local.closedAgentPreset;
     }
   }
   function modeAllowed(key, kind, id, cfg, mode) {
@@ -68,12 +69,12 @@ export function createModeModule(ctx) {
     return false;
   }
   function modePreset(key, mode, cfg) {
-    if (mode === 'closed-agent') return ctx.closedAgentPreset || 'router-standard';
+    if (mode === 'closed-agent') return ctx.flags.closedAgentPreset || 'router-standard';
     // 二代仿真模式优先使用 socialV2.agentPreset；未配置时回退到默认聊天预设
     if (mode === 'reserved2') {
       // 角色扮演期间换一份不带小鲸鱼速记/关系的预设（2026-10-20：预设是常驻系统提示，
       // 材料层换了角色卡也没用——速记里的说话方式会让角色说成小鲸鱼的口吻）。
-      if (typeof ctx.isRoleplaying === 'function' && ctx.isRoleplaying(key)) {
+      if (isRoleplaying(key)) {
         return cfg.socialV2?.roleplayPreset || 'qq-roleplay';
       }
       return cfg.socialV2?.agentPreset || cfg.agentPreset || undefined;
@@ -83,7 +84,7 @@ export function createModeModule(ctx) {
   function isSessionAllowedInCurrentMode(key) {
     const m = /^(group|private):(\d+)$/.exec(key);
     if (!m) return false;
-    return modeAllowed(key, m[1], Number(m[2]), cfg, ctx.currentMode);
+    return modeAllowed(key, m[1], Number(m[2]), cfg, ctx.flags.currentMode);
   }
 
   // groupIdFromKey 已抽到 src/core/identity.js（纯函数，有单测）。

@@ -25,10 +25,20 @@ function makeShadow({ shadow = true, stateThrows = false, writeThrows = false, s
     formatMemoryV2: () => '她记得：上周答应画头像',
     // 妈妈留言默认读真实 state 文件；测试注入空串做隔离（否则有真实留言的机器上 facts 非空）。
     getMomBlock: () => '',
+    // 第 3 期：typeof 探测已删、依赖显式化——测试不关心的项给桩（生产里 bridge 永远注入）。
+    getPeople: () => ({}),
+    getMemberName: () => '',
+    getMood: () => null,
+    isRoleplay: () => false,
+    getOverlay: () => '',
+    getExpressionBlock: () => '',
+    imageLibraryIndexText: () => '',
+    getRoleCore: () => '',
+    getOtherConversations: () => [],
     getSocialV2State: () => { if (stateThrows) throw new Error('状态取不到'); return st; },
     log: (...a) => logs.push(a.join(' ')),
     readJsonSafe: () => ({ entries: written.flatMap((w) => w.entries).slice(0, -1) }),
-    slangEntries: []
+    flags: { slangEntries: [] },
   });
   return { mod, written, logs };
 }

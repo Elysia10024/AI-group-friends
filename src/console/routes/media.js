@@ -12,11 +12,12 @@
 //   Object.assign(Object.create(deps), { req, res, url, sendJson, readBody, gateSendTool })
 // 用 Object.create(deps) 而不是展开，是为了让 deps 上的 get/set 访问器继续生效。
 import { gateSendRate } from '../../core/send-gate.js';
+import { withSendQuota } from '../../core/send-quota.js';
 
 /**
  * 覆盖 2 条路由，原 L2492–L2603
  */
-export async function handleMedia1(ctx) {
+export async function handleForwardMedia(ctx) {
   const {
     agentTokenOk,
     bot,
@@ -43,7 +44,7 @@ export async function handleMedia1(ctx) {
       const keyMatch = /^(group|private):(\d+)$/.exec(key);
       if (!keyMatch) { sendJson({ ok: false, error: 'key 格式应为 group:群号 或 private:QQ号' }, 400); return true; }
       if (!id) { sendJson({ ok: false, error: 'id 不能为空' }, 400); return true; }
-      if (deps.currentMode !== 'reserved2') {
+      if (deps.flags.currentMode !== 'reserved2') {
         sendJson({ ok: false, error: '合并转发查看仅 reserved2 模式可用' }, 403);
         return true;
       }
@@ -57,7 +58,7 @@ export async function handleMedia1(ctx) {
       }
       const kind = keyMatch[1];
       const num = Number(keyMatch[2]);
-      if (!Number.isFinite(num) || num <= 0 || !modeAllowed(key, kind, num, cfg, deps.currentMode)) {
+      if (!Number.isFinite(num) || num <= 0 || !modeAllowed(key, kind, num, cfg, deps.flags.currentMode)) {
         sendJson({ ok: false, error: '当前模式不允许读取该会话' }, 403);
         return true;
       }
@@ -136,7 +137,7 @@ export async function handleMedia1(ctx) {
       if (req.headers['x-agent-token'] && !agentTokenOk(key, req.headers['x-agent-token'])) { sendJson({ ok: false, error: 'agent token 无效' }, 403); return true; }
       if (req.headers['x-agent-token'] && !v2SessionAllowed(key)) { sendJson({ ok: false, error: '目标不在当前模式允许范围内' }, 403); return true; }
       if (req.headers['x-agent-token'] && !v2ToolEnabled('getForwardMsg')) { sendJson({ ok: false, error: '工具未启用：qq_get_forward_msg' }, 403); return true; }
-      if (deps.currentMode !== 'reserved2') { sendJson({ ok: false, error: '转发媒体读取仅 reserved2 模式可用' }, 403); return true; }
+      if (deps.flags.currentMode !== 'reserved2') { sendJson({ ok: false, error: '转发媒体读取仅 reserved2 模式可用' }, 403); return true; }
       if (!media.length) { sendJson({ ok: true, key, media: [], images: [] }); return true; }
       try {
         const images = await fetchMediaData(media);
@@ -154,7 +155,7 @@ export async function handleMedia1(ctx) {
 /**
  * 覆盖 1 条路由，原 L2868–L3015
  */
-export async function handleMedia2(ctx) {
+export async function handleImageMessageAndLegacySend(ctx) {
   const {
     SENSITIVE_RE,
     agentTokenOk,
@@ -200,7 +201,7 @@ export async function handleMedia2(ctx) {
       const keyMatch = /^(group|private):(\d+)$/.exec(key);
       if (!keyMatch) { sendJson({ ok: false, error: 'key 格式应为 group:群号 或 private:QQ号' }, 400); return true; }
       if (!messageId) { sendJson({ ok: false, error: 'messageId 不能为空' }, 400); return true; }
-      if (deps.currentMode === 'reserved2' && !agentToken) {
+      if (deps.flags.currentMode === 'reserved2' && !agentToken) {
         sendJson({ ok: false, error: 'reserved2 模式读取图片必须携带 agent token' }, 403);
         return true;
       }
@@ -210,7 +211,7 @@ export async function handleMedia2(ctx) {
       }
       const kind = keyMatch[1];
       const id = Number(keyMatch[2]);
-      if (!Number.isFinite(id) || id <= 0 || !modeAllowed(key, kind, id, cfg, deps.currentMode)) {
+      if (!Number.isFinite(id) || id <= 0 || !modeAllowed(key, kind, id, cfg, deps.flags.currentMode)) {
         sendJson({ ok: false, error: '当前模式不允许读取该会话' }, 403);
         return true;
       }
@@ -218,7 +219,7 @@ export async function handleMedia2(ctx) {
         sendJson({ ok: false, error: '工具未启用：qq_get_message_images' }, 403);
         return true;
       }
-      if (!agentToken && deps.currentMode === 'closed-agent' && !v2ToolEnabled('getImages')) {
+      if (!agentToken && deps.flags.currentMode === 'closed-agent' && !v2ToolEnabled('getImages')) {
         sendJson({ ok: false, error: '工具未启用：qq_get_message_images' }, 403);
         return true;
       }
@@ -266,7 +267,7 @@ export async function handleMedia2(ctx) {
         sendJson({ ok: false, error: 'replyToMessageId 不能为空' }, 400);
         return true;
       }
-      if (deps.currentMode === 'reserved2' && !token) { sendJson({ ok: false, error: 'reserved2 模式发送必须携带 agent token' }, 403); return true; }
+      if (deps.flags.currentMode === 'reserved2' && !token) { sendJson({ ok: false, error: 'reserved2 模式发送必须携带 agent token' }, 403); return true; }
       if (token && !agentTokenOk(key, token)) { sendJson({ ok: false, error: 'agent token 无效' }, 403); return true; }
       const flag = isPrivate ? 'sendPrivate' : (isReply ? 'reply' : 'sendGroup');
       if (token && !v2ToolEnabled(flag)) { sendJson({ ok: false, error: `工具未启用：${flag}` }, 403); return true; }
@@ -278,7 +279,7 @@ export async function handleMedia2(ctx) {
       if (!keyMatch) { sendJson({ ok: false, error: 'key 格式无效' }, 400); return true; }
       const kind = keyMatch[1];
       const id = Number(keyMatch[2]);
-      if (!Number.isFinite(id) || id <= 0 || !modeAllowed(key, kind, id, cfg, deps.currentMode)) {
+      if (!Number.isFinite(id) || id <= 0 || !modeAllowed(key, kind, id, cfg, deps.flags.currentMode)) {
         sendJson({ ok: false, error: '目标不在当前模式允许范围内' }, 403);
         return true;
       }
@@ -302,33 +303,38 @@ export async function handleMedia2(ctx) {
       const maxChars = Math.max(1, Number(sendCfg.maxMessageChars) || 500);
       if (message.length > maxChars) { sendJson({ ok: false, error: `单条消息不能超过 ${maxChars} 字` }, 400); return true; }
       if (SENSITIVE_RE.test(message)) { sendJson({ ok: false, error: '消息含敏感信息，已阻止发送' }, 403); return true; }
-      try {
-        const st = getSocialV2State(key);
-        const now = Date.now();
-        // 与 send 域共用同一个闸门（超限必须留日志、被叫醒的回合可用回复额度）——
-        // 以前这里是第五份手抄的限流代码，正是"抄漏一份就静默失败"的来源。
-        if (!gateSendRate({ st, sendCfg, count: 1, now, key, tag: '[send]', log, sendJson, rateLimitCheck, hourCapFor })) return true;
-        st.sendTimes = reserveSlots(st.sendTimes, { count: 1, now });
-        const sentMessages = await sendMessagesV2(key, [message], [], actualReplyToMessageId, atUserId);
-        recordSentMessagesV2(key, sentMessages);
-        markAiSpoke(st, now);
-        saveSocialV2State();
-        log(`[send] ${url.pathname} ${key}: 成功 ${sentMessages.length}/1 条`);
-        appendActivity(`${key} [send] 成功 ${sentMessages.length}/1 条：${message.slice(0, 80)}`);
-        if (sentMessages.length > 0) scheduleReplyCheckV2(key);
-        sendJson({ ok: true, key, sent: sentMessages.length, failed: sentMessages.length ? 0 : 1, quoted: quotedInfo });
-      } catch (error) {
+      // 第 17 轮：预占/回滚收敛到 withSendQuota（原有 reserved 门控版本一并迁移，行为对齐）。
+      const st = getSocialV2State(key);
+      const now = Date.now();
+      const quota = await withSendQuota({
+        st,
+        count: 1,
+        now,
+        reserveSlots,
+        rollbackSlots,
+        gate: () => gateSendRate({ st, sendCfg, count: 1, now, key, tag: '[send]', log, sendJson, rateLimitCheck, hourCapFor }),
+        run: () => sendMessagesV2(key, [message], [], actualReplyToMessageId, atUserId),
+      });
+      if (quota.gateFailed) return true;
+      if (!quota.ok) {
+        const error = quota.error;
         if (error?.sent?.length) {
           recordSentMessagesV2(key, error.sent);
           log(`[send] ${url.pathname} ${key} 部分成功 ${error.sent.length}/1 条，已记录已发消息`);
         }
-        // 失败/未发出的消息回滚预占的发送额度，避免假 429。
-        const sentCount = Array.isArray(error?.sent) ? error.sent.length : 0;
-        const failedCount = Math.max(0, 1 - sentCount);
-        st.sendTimes = rollbackSlots(st.sendTimes, { count: failedCount, now });
-        saveSocialV2State();
+        if (quota.rolledBack) saveSocialV2State();
+        if (quota.rollbackError) log(`[send] 回滚发送额度失败 (${key}):`, quota.rollbackError?.message ?? quota.rollbackError);
         sendJson({ ok: false, error: error?.message ?? String(error) }, 500);
+        return true;
       }
+      const sentMessages = quota.value;
+      recordSentMessagesV2(key, sentMessages);
+      markAiSpoke(st, now);
+      saveSocialV2State();
+      log(`[send] ${url.pathname} ${key}: 成功 ${sentMessages.length}/1 条`);
+      appendActivity(`${key} [send] 成功 ${sentMessages.length}/1 条：${message.slice(0, 80)}`);
+      if (sentMessages.length > 0) scheduleReplyCheckV2(key);
+      sendJson({ ok: true, key, sent: sentMessages.length, failed: sentMessages.length ? 0 : 1, quoted: quotedInfo });
       return true;
     }
     return false;

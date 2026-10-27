@@ -11,6 +11,7 @@ import { matchAdminCommand, isSlashCommand } from '../core/commands.js';
 import { checkGroupAdminCommand, adminGroupsOf, GROUP_ADMIN_COMMANDS } from '../core/group-admin.js';
 import { parseSubscribeArg, looksLikeQq, addSpeakerId, removeSpeakerId } from '../core/subscribe.js';
 import { memoryFileName } from '../core/memory-files.js';
+import { atomicWriteJson } from '../core/state-io.js';
 
 // 默认角色（= 小鲸鱼本人）。退出角色扮演时切回她，而不是 role=null ——
 // null 时 currentRoleHint() 返回空串，她就彻底没有人格了（2026-10-19 改）。
@@ -35,6 +36,7 @@ const HELP_TEXT = [
 export function createAdminCommandsModule(deps) {
   const {
     KNOWN_AGENT_TOKENS,
+    registry,
     ROOT,
     allowed,
     cancelPendingEntry,
@@ -88,45 +90,19 @@ export function createAdminCommandsModule(deps) {
     const old = state.sessions[key];
     const hadSession = Boolean(old);
     if (hadSession) {
-      ctx.sessionEpoch++;
+      ctx.flags.sessionEpoch++;
       delete state.sessions[key];
       reverse.delete(old);
-      collectors.delete(old);
-      sendToolSucceededSessions.delete(old);
-      pendingSendToolCalls.delete(old);
-      v2TurnStartAt.delete(old);
-      toolCallNames.delete(old);
-      social.silentTurns.delete(old);
-      social.exitingSessions.delete(old);
+      registry.disposeSession(old);
     }
-    const pe = pending.get(key);
-    if (pe) {
-      clearTimeout(pe.timer);
-      cancelPendingEntry(pe).catch(() => {});
-    }
-    pending.delete(key);
-    queued.delete(key);
-    queuedHintAt.delete(key);
-    sessionPromises.delete(key);
     drainPromptQueue(key, '会话已重置');
-    social.recentMessages.delete(key);
-    messageMediaStore.delete(key);
-    social.pendingSummaries.delete(key);
-    social.states.delete(key);
-    social.silentContext.delete(key);
-    slangWindows.delete(key);
-    slangExtractionCooldowns.delete(key);
-    slangSubmitTimes.delete(key);
     cancelSocialTimers(key);
     clearSocialV2Timers(key);
-    pendingWakeKeys.delete(key);
-    wakeConfigUpdatedKeys.delete(key);
-    markReadCalledKeys.delete(key);
-    wakeConfigMissCount.delete(key);
     const removedV2 = socialV2.conversations.get(key);
     if (removedV2?.agentToken) KNOWN_AGENT_TOKENS.delete(removedV2.agentToken);
-    socialV2.conversations.delete(key);
-    seenForwardIds.delete(key);
+    // 30 多个 per-key delete 收敛成一次登记处调用（第 2 期）：注册名单在 bridge.js，
+    // 是旧三张手写清单的并集；以后加 per-key Map 只需在声明处 register，这里不用动。
+    registry.disposeKey(key);
     saveSocialV2State();
     saveState();
     return hadSession;
@@ -208,14 +184,22 @@ export function createAdminCommandsModule(deps) {
             snap.memory = mem;
             const bak = memFile.replace(/\.json$/, '.roleplay-bak.json');
             fs.copyFileSync(memFile, bak);
-            fs.writeFileSync(memFile, JSON.stringify(emptyMemory(mem?.memoryVersion ?? 2)), 'utf8');
-            log(`角色扮演：已隔离 ${key} 的记忆（备份 ${bak}）`);
           } catch (e) {
-            log(`角色扮演：隔离记忆失败（继续）：${e?.message ?? e}`);
+            log(`角色扮演：备份记忆失败（继续）：${e?.message ?? e}`);
           }
         }
-        fs.mkdirSync(ROLEPLAY_ISO_DIR, { recursive: true });
-        fs.writeFileSync(f, JSON.stringify(snap), 'utf8');
+        // 先写快照、再清记忆：两步之间崩溃时快照仍在，restoreConversation 能恢复。
+        // 旧顺序是「先清记忆再写快照」，崩在中间 = 记忆已空而快照不存在（审计 D-03）。
+        // 两步都走 atomicWriteJson：写一半的坏文件不会被 readJsonSafe 静默当成空状态。
+        atomicWriteJson(f, snap);
+        if (snap.memory && memFile) {
+          try {
+            atomicWriteJson(memFile, emptyMemory(snap.memory.memoryVersion ?? 2));
+            log(`角色扮演：已隔离 ${key} 的记忆（备份 ${memFile.replace(/\.json$/, '.roleplay-bak.json')}）`);
+          } catch (e) {
+            log(`角色扮演：清空记忆失败（快照已写成，继续）：${e?.message ?? e}`);
+          }
+        }
         log(`角色扮演：已隔离 ${key} 的上下文（session=${snap.session ?? '无'}，材料=${snap.conversation ? '有' : '无'}）`);
       }
     } catch (error) {
@@ -259,7 +243,7 @@ export function createAdminCommandsModule(deps) {
         try {
           const curMem = fs.existsSync(memFile) ? JSON.parse(fs.readFileSync(memFile, 'utf8')) : null;
           const mergedMem = mergeMemory(snap.memory, curMem);
-          fs.writeFileSync(memFile, JSON.stringify(mergedMem), 'utf8');
+          atomicWriteJson(memFile, mergedMem);
           const st = socialV2.conversations.get(key);
           if (st) {
             st.activeTopics = mergedMem.activeTopics;

@@ -8,7 +8,7 @@ test('会话 key → 记忆文件名（每个会话一个文件）', () => {
   assert.equal(memoryFileName('private:10000001'), 'private-10000001.json');
   assert.equal(memoryFileName('group:abc'), '', '非法 key 不给文件名');
   assert.equal(memoryFileName(''), '');
-  assert.equal(memoryFilePath('C:/x/state/memory', 'group:1').replace(/\\/g, '/'), 'C:/x/state/memory/group-1.json');
+  assert.equal(memoryFilePath('/tmp/state/memory', 'group:1').replace(/\\/g, '/'), '/tmp/state/memory/group-1.json');
 });
 
 test('pickMemory 只取记忆字段并裁剪上限（不把运行时状态写进记忆文件）', () => {

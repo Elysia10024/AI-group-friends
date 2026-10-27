@@ -9,8 +9,7 @@
 // 按 qq-bridge 轻量化为 JSON 存储 + 控制台人工确认，不引入数据库。
 
 import fs from 'node:fs';
-import path from 'node:path';
-import crypto from 'node:crypto';
+import { atomicWriteJson } from './core/state-io.js';
 
 export const SLANG_STATUS = Object.freeze({
   CANDIDATE: 'candidate',
@@ -57,22 +56,31 @@ export function normalizeSlangEntry(raw) {
 }
 
 export function loadSlang(file) {
+  // 2026-10-27 第 1 期：「存在但解析不了」从静默返回 [] 改成抛错——
+  // 旧行为会让下一次 saveSlang 把 [] 写回，4887 条黑话全没（审计 P-02）。
+  // 文件缺失仍是合法空。slang 顶层是数组、不改形状加版本号，理由见 core/state-schema.js 头注释。
+  let text;
   try {
-    let text = fs.readFileSync(file, 'utf8');
-    if (text.charCodeAt(0) === 0xfeff) text = text.slice(1);
-    const parsed = JSON.parse(text);
-    if (!Array.isArray(parsed)) return [];
-    return parsed.map(normalizeSlangEntry).filter((e) => e.content);
-  } catch {
-    return [];
+    text = fs.readFileSync(file, 'utf8');
+  } catch (error) {
+    if (error?.code === 'ENOENT') return [];
+    throw error;
   }
+  if (text.charCodeAt(0) === 0xfeff) text = text.slice(1);
+  let parsed;
+  try {
+    parsed = JSON.parse(text);
+  } catch (error) {
+    throw new Error(`slang.json 存在但解析不了（${file}）：${error?.message ?? error}。拒绝按空表处理（会在下次保存时清空）。`);
+  }
+  if (!Array.isArray(parsed)) {
+    throw new Error(`slang.json 顶层不是数组（${file}）：拒绝按空表处理。`);
+  }
+  return parsed.map(normalizeSlangEntry).filter((e) => e.content);
 }
 
 export function saveSlang(file, entries) {
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  const tmp = `${file}.${process.pid}.${crypto.randomBytes(6).toString('hex')}.tmp`;
-  fs.writeFileSync(tmp, JSON.stringify(entries, null, 2), { encoding: 'utf8', mode: 0o600 });
-  fs.renameSync(tmp, file);
+  atomicWriteJson(file, entries);
 }
 
 export function createSlangEntry({ content, meaning = '', usage = '', example = '', risk = '', sources = [], status = SLANG_STATUS.CANDIDATE, source = 'ai', evidence = [] } = {}) {

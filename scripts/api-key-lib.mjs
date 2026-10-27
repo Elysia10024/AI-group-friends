@@ -7,12 +7,13 @@
 //      这一步才是真判据：`deepseek-v4-flash-vision-exp` 这类 exp 别名不在 /models 列表里，
 //      服务端把它解析成 deepseek-flash，只有真打一次才知道新 key 认不认。
 import fs from 'node:fs';
+import { aiqunyouPath, projectPath } from './lib/paths.mjs';
 
 export const DEFAULT_BASE = process.env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com';
 
 /** 两台 DSH 的凭据文件：她（legacy 内核）与桌面版（就是你现在这个界面）。 */
 export const CRED_TARGETS = {
-  bot: '<项目根>/dsh-home-legacy/.credentials.yaml',
+  bot: aiqunyouPath('dsh-home-legacy/.credentials.yaml'),
   desktop: '%USERPROFILE%/.dsh/.credentials.yaml'
 };
 
@@ -28,11 +29,11 @@ export const maskKey = (k) => (k ? `${String(k).slice(0, 9)}…${String(k).slice
 /** 她实际用的模型：优先桥的 config.json，其次内核 settings.yaml，最后退默认。 */
 export function botModel() {
   try {
-    const cfg = JSON.parse(fs.readFileSync('<项目根>/config.json', 'utf8'));
+    const cfg = JSON.parse(fs.readFileSync(projectPath('config.json'), 'utf8'));
     if (cfg?.dsh?.model) return { model: cfg.dsh.model, from: 'qq-bridge config.json' };
   } catch { /* 往下退 */ }
   try {
-    const y = fs.readFileSync('<项目根>/dsh-home-legacy/settings.yaml', 'utf8');
+    const y = fs.readFileSync(aiqunyouPath('dsh-home-legacy/settings.yaml'), 'utf8');
     const m = /agent-default-model:[\s\S]*?model:\s*(\S+)/.exec(y);
     if (m) return { model: m[1], from: '内核 settings.yaml' };
   } catch { /* 往下退 */ }

@@ -1,7 +1,7 @@
-// ⚠️ 已停用的**一代**社交流程域（chat / reserved 模式专用）：当前**不可达**。
-//   本文件的 isSocialEnabled() 要求 currentMode === 'reserved'，而 'chat' / 'reserved' 已从
-//   bridge.js 的 VALID_MODES 里删除（控制台入口、配置面板、路由同批删掉）。
-//   留着不删的理由与"真要删该怎么做"，见 social-loop.js 文件头那段说明（含实测代价）。
+// 会话状态与计时器域（第 5 期 5c-2 修剪）：一代判据函数（isSocialEnabled / isMustReplyText /
+//   appendRecentMessage / appendSummary / buildContextBlock）已删——外部消费者为零。
+//   剩下的是 v2 共用的状态助手：socialState / isDirectAddress / enterActive / leaveActive /
+//   cancelSocialTimers / cancelAllSocialTimers / cleanupSocialForModeChange。
 //
 // 会话活跃度与计时器域：从 bridge.js 的 main() 里整体搬出来的一个"簇"（12 个互相调用的函数）。
 //
@@ -20,9 +20,9 @@ import { renderMessageLine } from '../core/msg-line.js';
 export function createSocialFlowModule(ctx) {
   const {
     cfg,
-    isDirectedAtAi,
     mediaHintFor,
     relationTagFor,
+    isDirectedAtAi,
     messageMediaStore,
     promptQueues,
     randInt,
@@ -31,9 +31,6 @@ export function createSocialFlowModule(ctx) {
   } = ctx;
 
 
-  function isSocialEnabled() {
-    return ctx.currentMode === 'reserved' && cfg.social?.enabled !== false;
-  }
 
   function socialState(key) {
     if (!social.states.has(key)) {
@@ -57,51 +54,9 @@ export function createSocialFlowModule(ctx) {
     return false;
   }
 
-  // 是否"直接针对 AI"的提问/挑战：提到 AI 相关词且带疑问/比较，或对"你"开火，或追问催促
-  // isDirectedAtAi 已抽到 src/core/wake.js（纯函数，有单测）。
-  // 下面这个 isMustReplyText 是"活跃期批量检测"用的判断：不依赖 event。
-  function isMustReplyText(textContent, groupId = '') {
-    const lower = String(textContent ?? '').toLowerCase();
-    if (ctx.selfNickname && (lower.includes('@' + ctx.selfNickname) || lower.includes(ctx.selfNickname))) return true;
-    if (textMentionsSelf(lower, groupId)) return true;
-    for (const kw of (cfg.social?.mustReplyKeywords ?? [])) {
-      if (lower.includes(String(kw).toLowerCase())) return true;
-    }
-    if (isDirectedAtAi(textContent)) return true;
-    return false;
-  }
 
-  function appendRecentMessage(key, sender, textContent, plainText, quoteTargetIsSelf = false, isOwner = false, media = [], messageRef = '') {
-    if (!social.recentMessages.has(key)) social.recentMessages.set(key, []);
-    const arr = social.recentMessages.get(key);
-    arr.push({
-      sender,
-      text: String(textContent).slice(0, 3000),
-      plain: String(plainText ?? textContent).slice(0, 3000),
-      quoteTargetIsSelf: !!quoteTargetIsSelf,
-      isOwner: !!isOwner,
-      media: Array.isArray(media) ? media : [],
-      messageId: messageRef ? String(messageRef) : '',
-      hasMedia: Array.isArray(media) && media.length > 0,
-      time: Date.now()
-    });
-    const cap = Math.max(50, Number(cfg.social?.contextWindow ?? 15) * 2);
-    while (arr.length > cap) arr.shift();
-  }
 
-  function appendSummary(key, sender, textContent, plainText, isOwner = false, media = [], messageRef = '') {
-    if (!social.pendingSummaries.has(key)) {
-      social.pendingSummaries.set(key, { items: [], since: Date.now() });
-    }
-    const entry = social.pendingSummaries.get(key);
-    entry.items.push({ sender, text: String(textContent).slice(0, 3000), plain: String(plainText ?? textContent).slice(0, 3000), isOwner: !!isOwner, media: Array.isArray(media) ? media : [], messageId: messageRef ? String(messageRef) : '', hasMedia: Array.isArray(media) && media.length > 0, time: Date.now() });
-    if (entry.items.length > 60) entry.items.shift();
-  }
 
-  function buildContextBlock(key) {
-    const ctx = (social.recentMessages.get(key) ?? []).slice(-Number(cfg.social?.contextWindow ?? 15));
-    return ctx.map((m) => renderMessageLine(m, { mediaHint: mediaHintFor(key, m.messageId, m.media), tag: relationTagFor?.(m.userId) ?? '' })).join('\n') || '（无）';
-  }
 
   // 触发进入活跃（启动阶段 → 活跃阶段）
   function enterActive(key) {
@@ -163,5 +118,12 @@ export function createSocialFlowModule(ctx) {
   }
 
 
-  return { isSocialEnabled, socialState, isDirectAddress, isMustReplyText, appendRecentMessage, appendSummary, buildContextBlock, enterActive, cancelSocialTimers, cancelAllSocialTimers, cleanupSocialForModeChange, leaveActive };
+  // 第 5 期 5c-2 恢复：flushSummaries（活函数，控制台路由在用）内部依赖 buildContextBlock，
+  // 修剪时按「外部消费者计数」误判它死了（内部调用没被计数）——守卫抓红后恢复。
+  function buildContextBlock(key) {
+    const ctx = (social.recentMessages.get(key) ?? []).slice(-Number(cfg.social?.contextWindow ?? 15));
+    return ctx.map((m) => renderMessageLine(m, { mediaHint: mediaHintFor(key, m.messageId, m.media), tag: relationTagFor?.(m.userId) ?? '' })).join('\n') || '（无）';
+  }
+
+  return { socialState, isDirectAddress, enterActive, cancelSocialTimers, cancelAllSocialTimers, cleanupSocialForModeChange, leaveActive, buildContextBlock };
 }

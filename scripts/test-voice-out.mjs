@@ -9,10 +9,11 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createVoiceOutModule } from '../src/domains/voice-out.js';
+import { aiqunyouPath } from './lib/paths.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const cfg = JSON.parse(fs.readFileSync(path.join(ROOT, 'config.json'), 'utf8').replace(/^\uFEFF/, ''));
-const PRESET_PATH = '<项目根>/voice-stack/preset.json';
+const PRESET_PATH = aiqunyouPath('voice-stack/preset.json');
 
 let failed = 0;
 const check = (label, ok, detail = '') => { console.log(`${ok ? '  PASS  ' : '  FAIL  '}${label}${detail ? `  [${detail}]` : ''}`); if (!ok) failed += 1; };

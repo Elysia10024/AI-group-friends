@@ -22,12 +22,13 @@
 //      （否则搬出去就是 ReferenceError）。
 import fs from 'node:fs';
 import path from 'node:path';
+import { projectPath } from './lib/paths.mjs';
 import {
   blankCode, matchBraces, declaredInside, countRefs, collectIdentifiers
 } from './split-console.mjs';
 
-const SERVER = '<项目根>/src/console/server.js';
-const ROUTE_DIR = '<项目根>/src/console/routes';
+const SERVER = projectPath('src/console/server.js');
+const ROUTE_DIR = projectPath('src/console/routes');
 const DRY = process.argv.includes('--dry');
 
 // ---------------------------------------------------------------- 域划分

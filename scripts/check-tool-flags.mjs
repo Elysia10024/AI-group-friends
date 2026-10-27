@@ -26,7 +26,10 @@ const files = execFileSync('git', ['ls-files', 'src'], { cwd: ROOT, encoding: 'u
 
 const literals = new Map();   // flag → 出现它的文件（前几处）
 for (const rel of files) {
-  const src = fs.readFileSync(path.join(ROOT, rel), 'utf8');
+  const abs = path.join(ROOT, rel);
+  // 工作区里已删除、但还没提交时 `git ls-files` 仍会列出来 —— 跳过，别让守卫崩在 ENOENT
+  if (!fs.existsSync(abs)) continue;
+  const src = fs.readFileSync(abs, 'utf8');
   for (const m of src.matchAll(/v2ToolEnabled\(\s*'([A-Za-z]+)'/g)) {
     if (!literals.has(m[1])) literals.set(m[1], []);
     if (literals.get(m[1]).length < 2) literals.get(m[1]).push(rel);
@@ -78,5 +81,32 @@ if (!toolMapKeys) {
     console.log(`✅ qq_get_prompt 的 toolMap 与配置开关一致（${toolMapKeys.length} 个）`);
   }
 }
-console.log(bad ? '\n❌ 工具开关几处不一致' : '\n✅ 工具开关几处一致（配置 / 界面 / 代码引用 / qq_get_prompt 清单）');
+// ── 第五个地方：**活配置** `config.json` 的开关键 ──────────────────────────
+// 2026-10-28（第 5 期 5d）：活配置里曾躺着 getUnread / socialState / markRead 三个
+// 「默认值里没有、界面不显示、代码也不读」的僵尸键（一代遗留）。它们不影响运行，
+// 但会让人以为"这个开关存在"。判据：活配置的键必须是默认值键的子集（缺失是正常的，
+// 默认值会补；**多出来**的才是陈旧键）。
+const liveCfgPath = path.join(ROOT, 'config.json');
+if (fs.existsSync(liveCfgPath)) {
+  const liveTools = (() => {
+    try {
+      const parsed = JSON.parse(fs.readFileSync(liveCfgPath, 'utf8').replace(/^\uFEFF/, ''));
+      return Object.keys(parsed?.socialV2?.tools ?? {});
+    } catch {
+      console.log('⚠️ config.json 解析失败，跳过活配置开关检查');
+      return null;
+    }
+  })();
+  if (liveTools) {
+    const stale = liveTools.filter((f) => !cfgFlags.includes(f));
+    if (stale.length) {
+      bad += 1;
+      console.log(`❌ config.json 里有默认值/界面/代码都不认识的陈旧开关（建议删掉）：${stale.join(', ')}`);
+    } else {
+      console.log(`✅ 活配置开关键都是已知项（${liveTools.length} 个；默认值另有 ${cfgFlags.length - liveTools.length} 个待补）`);
+    }
+  }
+}
+
+console.log(bad ? '\n❌ 工具开关几处不一致' : '\n✅ 工具开关几处一致（配置 / 界面 / 代码引用 / qq_get_prompt 清单 / 活配置）');
 process.exit(bad ? 1 : 0);

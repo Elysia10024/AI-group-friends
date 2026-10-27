@@ -34,6 +34,9 @@ export function createWakeModule(ctx) {
     log,
     pendingWakeKeys,
     promptQueues,
+    biliScrollMeta,
+    biliShareGroups,
+    biliPromptText,
     // 「说说」那一行事实：由 qzone 域渲染（额度是本地账本算的），这里只做搬运。
     qzonePromptText,
     // 「你的说说下面有人评论了」那段：**读一次就清**（跟红包那条同一个套路）——
@@ -81,20 +84,20 @@ export function createWakeModule(ctx) {
     const stickerCfg = cfg.socialV2?.sticker ?? {};
     // 表情策略段依赖 stickerEntries 这个模块级状态，所以由桥侧渲染好再传进去。
     const stickerText = stickerCfg.enabled !== false && stickerCfg.includeInPrompt !== false
-      ? `${buildStickerStrategyHint()}\n${buildStickerContext(ctx.stickerEntries, stickerCfg.promptMaxStickers ?? 8)}\n\n`
+      ? `${buildStickerStrategyHint()}\n${buildStickerContext(ctx.flags.stickerEntries, stickerCfg.promptMaxStickers ?? 8)}\n\n`
       : '';
     // 红包状态是内存态：读一次就清。副作用留在桥侧，模块保持纯函数。
     const redPacket = reason === 'redPacket' ? (redPacketStateV2(key) || { kind: 'fake', text: '' }) : null;
     if (reason === 'redPacket') clearRedPacketV2(key);
     // 空间评论也是"读一次就清"的内存态（见 ctx.takeQzoneCommentNotice 的注释）：
     // 只在这次唤醒就是因为评论时才取，别顺手把它吃掉。
-    const qzoneComment = reason === 'qzoneComment' ? (takeQzoneCommentNotice?.() ?? null) : null;
+    const qzoneComment = reason === 'qzoneComment' ? (takeQzoneCommentNotice() ?? null) : null;
     // 自刷视频这一轮要带：现在是不是「只刷不分享」窗口、凌晨攒了哪些视频、可以发到哪些群。
     // 数据都来自 bili-scroll 域（IO/状态在桥侧），这里只取一份快照交给纯渲染。
     const biliScroll = reason === 'biliScroll'
       ? {
-        ...(typeof ctx.biliScrollMeta === 'function' ? ctx.biliScrollMeta(key) : {}),
-        groups: typeof ctx.biliShareGroups === 'function' ? ctx.biliShareGroups() : []
+        ...biliScrollMeta(key),
+        groups: biliShareGroups()
       }
       : null;
     // 角色扮演（宠物等非小鲸鱼角色）：小鲸鱼专属的材料段一律不带——表情策略、说说额度、
@@ -114,7 +117,7 @@ export function createWakeModule(ctx) {
       qzoneText: roleplay ? '' : (qzonePromptText ? qzonePromptText() : ''),
       // B 站订阅那一行：关注了谁 + 最近播报了什么。播报是桥接直接发的、没进过她的上下文，
       // 不给这行她答不上「你关注的那几个游戏有新动态吗」。
-      biliText: roleplay ? '' : (typeof ctx.biliPromptText === 'function' ? ctx.biliPromptText(key) : ''),
+      biliText: roleplay ? '' : biliPromptText(key),
       qzoneComment: roleplay ? null : qzoneComment,
       inlineMax: cfg.socialV2?.context?.inlineMessages,
       // 沉睡前观察只在开关打开时才提；传 0 表示"别提这件事"（prompt 侧据此不再要求等待）。
@@ -145,10 +148,10 @@ export function createWakeModule(ctx) {
 
   async function sendWakePromptV2(key, reason) {
     if (cfg.socialV2?.enabled === false) return;
-    if (ctx.currentMode !== 'reserved2' || socialV2.paused) return;
+    if (ctx.flags.currentMode !== 'reserved2' || socialV2.paused) return;
     // 角色扮演期间只响应点名/私聊（防止其它路径绕过 scheduleWakeV2 的过滤直接叫醒）。
     {
-      const roleNow = String((typeof readRoleState === 'function' ? readRoleState(key)?.role : '') ?? '').trim();
+      const roleNow = String(readRoleState(key)?.role ?? '').trim();
       if (roleNow && roleNow !== '小鲸鱼') {
         const base = String(reason ?? '').split(':')[0];
         if (!['atMention', 'nameMention', 'private'].includes(base)) {
@@ -291,7 +294,7 @@ export function createWakeModule(ctx) {
 
   function scheduleReplyCheckV2(key) {
     if (cfg.socialV2?.enabled === false) return;
-    if (socialV2.paused || ctx.currentMode !== 'reserved2') return;
+    if (socialV2.paused || ctx.flags.currentMode !== 'reserved2') return;
     const st = getSocialV2State(key);
     // 新模式：不再"发完固定 30-45 秒后盲看一眼"（那 50 次唤醒大部分是白跑一趟）。
     // 改成武装一个跟进窗口：只有刚才跟她说话的人在窗口内继续说，才把她叫回来。
@@ -374,7 +377,7 @@ export function createWakeModule(ctx) {
     // densityWake 凑热闹、proactiveCheck 没话找话、probability/question、followUp、timeout、bootstrap
     // 一律不叫。2026-10-27 用户要求：机械应答，只被叫才回。
     // （poke 在 pending.js 就被固定应答「在呢」拦下，到不了这里；redPacket 也不叫。）
-    const roleNow = String((typeof readRoleState === 'function' ? readRoleState(key)?.role : '') ?? '').trim();
+    const roleNow = String(readRoleState(key)?.role ?? '').trim();
     if (roleNow && roleNow !== '小鲸鱼') {
       const base = String(reason ?? '').split(':')[0];
       if (!['atMention', 'nameMention', 'private'].includes(base)) {

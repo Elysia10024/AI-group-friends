@@ -9,6 +9,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { atomicWriteJson } from './state-io.js';
 
 /** 默认根目录（src/core/ 往上两级 = qq-bridge-main）。 */
 function defaultRoot() {
@@ -18,12 +19,6 @@ function defaultRoot() {
 /** 通道文件路径。 */
 export function momChannelFile(root = defaultRoot()) {
   return path.join(root, 'state', 'mom-channel.json');
-}
-
-function atomicWrite(file, data) {
-  const tmp = `${file}.tmp-${process.pid}`;
-  fs.writeFileSync(tmp, JSON.stringify(data, null, 1), 'utf8');
-  fs.renameSync(tmp, file);
 }
 
 export function readChannel(root = defaultRoot()) {
@@ -57,7 +52,7 @@ export function appendHerNote(root = defaultRoot(), text, now = Date.now(), key 
   };
   data.messages.push(msg);
   if (data.messages.length > 200) data.messages = data.messages.slice(-200);
-  atomicWrite(momChannelFile(root), data);
+  atomicWriteJson(momChannelFile(root), data);
   return msg;
 }
 
@@ -76,7 +71,7 @@ export function markReplied(root = defaultRoot(), msg) {
       m.replied = true;
     }
   }
-  atomicWrite(momChannelFile(root), data);
+  atomicWriteJson(momChannelFile(root), data);
 }
 
 /** 最近几条对话（她+妈妈），给妈妈回复做上下文。 */
@@ -93,7 +88,7 @@ export function appendMomNote(root = defaultRoot(), text, now = Date.now()) {
   const msg = { from: '妈妈', text: clean, at: new Date(now).toISOString(), shown: stamp(now) };
   data.messages.push(msg);
   if (data.messages.length > 200) data.messages = data.messages.slice(-200);
-  atomicWrite(momChannelFile(root), data);
+  atomicWriteJson(momChannelFile(root), data);
   return msg;
 }
 

@@ -6,8 +6,9 @@
 // 所以这条守卫只做一件事：让"配方坏了"在每天的体检里变红。
 //   node scripts/check-voice-spec.mjs
 import fs from 'node:fs';
+import { aiqunyouPath } from './lib/paths.mjs';
 
-const SPEC = '<项目根>/tts/her-voice.json';
+const SPEC = aiqunyouPath('tts/her-voice.json');
 const PARTICLES = '吧啊啦呀哦嘛噢咯吗呢呗嘞喽喔';
 
 let failed = 0;
@@ -57,7 +58,7 @@ else bad(`question_rise 不完整：${JSON.stringify(rise)}`);
 
 // 主人 2026-10-06 明确要求：句尾语气词一律轻声（含疑问句的「吗/呢」）。
 // serve.py 的 PARTICLES 与这里的说明必须对得上，否则"她看到的规则"和"代码做的事"会打架。
-const serveSrc = fs.readFileSync('<项目根>/tts/serve.py', 'utf8');
+const serveSrc = fs.readFileSync(aiqunyouPath('tts/serve.py'), 'utf8');
 const m = /PARTICLES\s*=\s*'([^']+)'/.exec(serveSrc);
 if (!m) bad('serve.py 里找不到 PARTICLES 定义（轻声词表）');
 else {

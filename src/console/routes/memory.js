@@ -21,7 +21,7 @@ import { matchExistingKey, personShortName, resolvePersonQq, displayNameForQq, Q
 /**
  * 覆盖 5 条路由，原 L2627–L2767
  */
-export async function handleMemory1(ctx) {
+export async function handlePeopleMemoryRoutes(ctx) {
   const {
     agentTokenOk,
     appendMemoryV2,
@@ -54,7 +54,7 @@ export async function handleMemory1(ctx) {
   /** 当前是不是在扮演别人（≠ 小鲸鱼）。扮演期间记忆读写都要特殊处理。按会话 key 判断（群宠物/私聊小鲸鱼）。 */
   const roleplayName = (key) => {
     try {
-      const rs = typeof readRoleState === 'function' ? readRoleState(key) : null;
+      const rs = readRoleState(key);
       const r = String(rs?.role ?? '').trim();
       return r && r !== '小鲸鱼' ? r : '';
     } catch { return ''; }
@@ -77,7 +77,8 @@ export async function handleMemory1(ctx) {
       const dir = path.join(ROOT, 'state', 'backups');
       fs.mkdirSync(dir, { recursive: true });
       const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
-      const file = path.join(dir, `memory-${op}-${stamp}-${String(key).replace(/[^a-zA-Z0-9]+/g, '_')}.json`);
+      // 时间在前：字典序裁剪 = 按时间裁剪。旧顺序 op 在前，超限时先删 clear/remove 快照（审计 D-02）。
+      const file = path.join(dir, `memory-${stamp}-${op}-${String(key).replace(/[^a-zA-Z0-9]+/g, '_')}.json`);
       atomicWriteJson(file, {
         at: new Date().toISOString(),
         op,
@@ -134,7 +135,7 @@ export async function handleMemory1(ctx) {
    */
   function routePeople() {
     if (req.method === 'GET' && url.pathname === '/api/socialV2/people') {
-      const people = (typeof getPeople === 'function' ? getPeople() : null) ?? {};
+      const people = getPeople() ?? {};
       const list = Object.entries(people).map(([qq, rec]) => ({
         qq,
         names: rec?.names && typeof rec.names === 'object' ? rec.names : {},
@@ -223,7 +224,7 @@ export async function handleMemory1(ctx) {
             relationOut = { target, error: `认不出「${target}」是哪一位（他要在本会话里说过话，名字得和消息里显示的一致；也可以直接给 QQ 号）` };
           } else {
             const out = { qq, target };
-            if (tagWanted && typeof setPersonTag === 'function') {
+            if (tagWanted) {
               setPersonTag(qq, tagWanted);
               out.tag = String(getPeople?.()?.[qq]?.tag ?? tagWanted);
               ctx.log?.(`[标签] ${target}（QQ ${qq}）→ ${out.tag}`);

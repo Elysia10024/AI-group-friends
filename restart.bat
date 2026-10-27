@@ -15,6 +15,6 @@ del state\bridge.lock 2>nul
 REM Start hidden (no console window). The QQBridge-Watchdog scheduled task keeps
 REM restarting the bridge if it dies, so the visible start.bat guard window is no
 REM longer needed for normal use (start.bat stays as the debug entry).
-powershell -NoProfile -Command "Start-Process -FilePath 'E:\node.js\node.exe' -ArgumentList 'src\bridge.js' -WorkingDirectory '%CD%' -WindowStyle Hidden -RedirectStandardOutput '%CD%\..\logs\bridge.out.log' -RedirectStandardError '%CD%\..\logs\bridge.err.log'"
+powershell -NoProfile -Command "Start-Process -FilePath 'node.exe' -ArgumentList 'src\bridge.js' -WorkingDirectory '%CD%' -WindowStyle Hidden -RedirectStandardOutput '%CD%\..\logs\bridge.out.log' -RedirectStandardError '%CD%\..\logs\bridge.err.log'"
 echo Bridge started (hidden). Logs: state\bridge.log
 powershell -NoProfile -Command "Start-Sleep -Seconds 6"

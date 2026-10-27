@@ -15,7 +15,7 @@
 /**
  * 覆盖 9 条路由，原 L459–L714
  */
-export async function handleSlang1(ctx) {
+export async function handleSlangAdminRoutes(ctx) {
   const {
     ROOT,
     SLANG_STATUS,
@@ -34,7 +34,6 @@ export async function handleSlang1(ctx) {
     runSlangResearch,
     saveSlangStore,
     sendJson,
-    slangEntries,
     slangExtractionCooldowns,
     slangResearchingIds,
     slangSubmitTimes,
@@ -51,12 +50,12 @@ export async function handleSlang1(ctx) {
     const slangMatch = url.pathname.match(/^\/api\/slang\/([^/]+)(?:\/(confirm|reject))?$/);
     if (req.method === 'PATCH' && slangMatch && !slangMatch[2]) {
       const id = slangMatch[1];
-      const idx = deps.slangEntries.findIndex((e) => e.id === id);
+      const idx = deps.flags.slangEntries.findIndex((e) => e.id === id);
       if (idx < 0) { sendJson({ ok: false, error: '黑话不存在' }, 404); return true; }
       const body = await readBody();
-      const entry = { ...slangEntries[idx] };
+      const entry = { ...deps.flags.slangEntries[idx] };
       if (body.content !== undefined) entry.content = String(body.content ?? '').trim();
-      if (body.content !== undefined && deps.slangEntries.some((e) => e.id !== id && e.content === entry.content)) {
+      if (body.content !== undefined && deps.flags.slangEntries.some((e) => e.id !== id && e.content === entry.content)) {
         sendJson({ ok: false, error: `黑话「${entry.content}」已存在` }, 400);
         return true;
       }
@@ -68,7 +67,7 @@ export async function handleSlang1(ctx) {
       if (body.status !== undefined && [SLANG_STATUS.CANDIDATE, SLANG_STATUS.CONFIRMED, SLANG_STATUS.REJECTED].includes(body.status)) entry.status = body.status;
       if (!entry.content) { sendJson({ ok: false, error: '黑话内容不能为空' }, 400); return true; }
       entry.updatedAt = new Date().toISOString();
-      deps.slangEntries[idx] = entry;
+      deps.flags.slangEntries[idx] = entry;
       saveSlangStore();
       log(`控制台：更新黑话「${entry.content}」`);
       sendJson({ ok: true, entry });
@@ -76,10 +75,10 @@ export async function handleSlang1(ctx) {
     }
     if (req.method === 'POST' && slangMatch && slangMatch[2] === 'confirm') {
       const id = slangMatch[1];
-      const idx = deps.slangEntries.findIndex((e) => e.id === id);
+      const idx = deps.flags.slangEntries.findIndex((e) => e.id === id);
       if (idx < 0) { sendJson({ ok: false, error: '黑话不存在' }, 404); return true; }
       const body = await readBody();
-      const entry = deps.slangEntries[idx];
+      const entry = deps.flags.slangEntries[idx];
       if (body.meaning !== undefined) entry.meaning = String(body.meaning ?? '').trim();
       if (body.usage !== undefined) entry.usage = String(body.usage ?? '').trim();
       if (body.example !== undefined) entry.example = String(body.example ?? '').trim();
@@ -98,9 +97,9 @@ export async function handleSlang1(ctx) {
     }
     if (req.method === 'POST' && slangMatch && slangMatch[2] === 'reject') {
       const id = slangMatch[1];
-      const idx = deps.slangEntries.findIndex((e) => e.id === id);
+      const idx = deps.flags.slangEntries.findIndex((e) => e.id === id);
       if (idx < 0) { sendJson({ ok: false, error: '黑话不存在' }, 404); return true; }
-      const entry = deps.slangEntries[idx];
+      const entry = deps.flags.slangEntries[idx];
       entry.status = SLANG_STATUS.REJECTED;
       entry.updatedAt = new Date().toISOString();
       saveSlangStore();
@@ -110,9 +109,9 @@ export async function handleSlang1(ctx) {
     }
     if (req.method === 'DELETE' && slangMatch && !slangMatch[2]) {
       const id = slangMatch[1];
-      const idx = deps.slangEntries.findIndex((e) => e.id === id);
+      const idx = deps.flags.slangEntries.findIndex((e) => e.id === id);
       if (idx < 0) { sendJson({ ok: false, error: '黑话不存在' }, 404); return true; }
-      const [removed] = deps.slangEntries.splice(idx, 1);
+      const [removed] = deps.flags.slangEntries.splice(idx, 1);
       saveSlangStore();
       log(`控制台：删除黑话「${removed.content}」`);
       sendJson({ ok: true, removed });
@@ -127,7 +126,7 @@ export async function handleSlang1(ctx) {
   function routeSlangList() {
     if (req.method === 'GET' && url.pathname === '/api/slang') {
       const status = url.searchParams.get('status') || '';
-      const list = status ? deps.slangEntries.filter((e) => e.status === status) : deps.slangEntries;
+      const list = status ? deps.flags.slangEntries.filter((e) => e.status === status) : deps.flags.slangEntries;
       sendJson({ entries: list, config: cfg.slang });
       return true;
     }
@@ -139,7 +138,7 @@ export async function handleSlang1(ctx) {
       const body = await readBody();
       const content = String(body.content ?? '').trim();
       if (!content) { sendJson({ ok: false, error: '黑话内容不能为空' }, 400); return true; }
-      if (deps.slangEntries.some((e) => e.content === content)) { sendJson({ ok: false, error: `黑话「${content}」已存在` }, 400); return true; }
+      if (deps.flags.slangEntries.some((e) => e.content === content)) { sendJson({ ok: false, error: `黑话「${content}」已存在` }, 400); return true; }
       const entry = createSlangEntry({
         content,
         meaning: String(body.meaning ?? '').trim(),
@@ -151,7 +150,7 @@ export async function handleSlang1(ctx) {
         source: 'manual',
         evidence: Array.isArray(body.evidence) ? body.evidence : []
       });
-      deps.slangEntries.push(entry);
+      deps.flags.slangEntries.push(entry);
       saveSlangStore();
       log(`控制台：新增黑话「${content}」`);
       sendJson({ ok: true, entry });
@@ -170,11 +169,11 @@ export async function handleSlang1(ctx) {
       }
       let removedCount = 0;
       if (status) {
-        removedCount = deps.slangEntries.filter((e) => e.status === status).length;
-        deps.slangEntries = deps.slangEntries.filter((e) => e.status !== status);
+        removedCount = deps.flags.slangEntries.filter((e) => e.status === status).length;
+        deps.flags.slangEntries = deps.flags.slangEntries.filter((e) => e.status !== status);
       } else {
-        removedCount = deps.slangEntries.length;
-        deps.slangEntries = [];
+        removedCount = deps.flags.slangEntries.length;
+        deps.flags.slangEntries = [];
         // 清空所有时同步清掉待提取窗口和冷却，避免“删了又回来”
         slangWindows.clear();
         slangExtractionCooldowns.clear();
@@ -196,9 +195,9 @@ export async function handleSlang1(ctx) {
       const status = String(body.status ?? '').trim();
       if (ids.length) {
         const idSet = new Set(ids);
-        const before = deps.slangEntries.length;
-        deps.slangEntries = deps.slangEntries.filter((e) => !idSet.has(e.id));
-        const removedCount = before - deps.slangEntries.length;
+        const before = deps.flags.slangEntries.length;
+        deps.flags.slangEntries = deps.flags.slangEntries.filter((e) => !idSet.has(e.id));
+        const removedCount = before - deps.flags.slangEntries.length;
         if (!removedCount) { sendJson({ ok: false, error: '没有匹配到要删除的黑话' }, 404); return true; }
         saveSlangStore();
         log(`控制台：批量删除黑话 ${removedCount} 条`);
@@ -210,8 +209,8 @@ export async function handleSlang1(ctx) {
         return true;
       }
       if (!status) { sendJson({ ok: false, error: '请提供 ids 或 status' }, 400); return true; }
-      const removedCount = deps.slangEntries.filter((e) => e.status === status).length;
-      deps.slangEntries = deps.slangEntries.filter((e) => e.status !== status);
+      const removedCount = deps.flags.slangEntries.filter((e) => e.status === status).length;
+      deps.flags.slangEntries = deps.flags.slangEntries.filter((e) => e.status !== status);
       saveSlangStore();
       log(`控制台：批量删除黑话 ${removedCount} 条（${status}）`);
       sendJson({ ok: true, removedCount });
@@ -245,8 +244,8 @@ export async function handleSlang1(ctx) {
       const body = await readBody();
       const ids = Array.isArray(body.ids) ? body.ids.map(String) : [];
       const candidates = ids.length
-        ? deps.slangEntries.filter((e) => ids.includes(e.id) && e.status === SLANG_STATUS.CANDIDATE)
-        : deps.slangEntries.filter((e) => e.status === SLANG_STATUS.CANDIDATE);
+        ? deps.flags.slangEntries.filter((e) => ids.includes(e.id) && e.status === SLANG_STATUS.CANDIDATE)
+        : deps.flags.slangEntries.filter((e) => e.status === SLANG_STATUS.CANDIDATE);
       if (!candidates.length) { sendJson({ ok: false, error: '没有可研究的候选黑话' }, 400); return true; }
       queueSlangTask(() => runSlangResearch(candidates));
       sendJson({ ok: true, count: candidates.length });
@@ -304,9 +303,9 @@ export async function handleSlang1(ctx) {
       let skippedCount = 0;
       const skipped = [];
       for (const id of ids) {
-        const idx = deps.slangEntries.findIndex((e) => e.id === id);
+        const idx = deps.flags.slangEntries.findIndex((e) => e.id === id);
         if (idx < 0) { skippedCount++; skipped.push({ id, reason: '不存在' }); continue; }
-        const entry = deps.slangEntries[idx];
+        const entry = deps.flags.slangEntries[idx];
         if (entry.status !== SLANG_STATUS.CANDIDATE) { skippedCount++; skipped.push({ id, content: entry.content, reason: '不是候选' }); continue; }
         if (!entry.meaning || !String(entry.meaning).trim()) { skippedCount++; skipped.push({ id, content: entry.content, reason: '缺少含义' }); continue; }
         entry.status = SLANG_STATUS.CONFIRMED;
@@ -328,9 +327,9 @@ export async function handleSlang1(ctx) {
       if (!ids.length) { sendJson({ ok: false, error: '请选择要拒绝的黑话' }, 400); return true; }
       let rejectedCount = 0;
       for (const id of ids) {
-        const idx = deps.slangEntries.findIndex((e) => e.id === id);
+        const idx = deps.flags.slangEntries.findIndex((e) => e.id === id);
         if (idx < 0) continue;
-        const entry = deps.slangEntries[idx];
+        const entry = deps.flags.slangEntries[idx];
         if (entry.status === SLANG_STATUS.REJECTED) continue;
         entry.status = SLANG_STATUS.REJECTED;
         entry.updatedAt = new Date().toISOString();
@@ -348,7 +347,7 @@ export async function handleSlang1(ctx) {
 /**
  * 覆盖 2 条路由，原 L2767–L2847
  */
-export async function handleSlang2(ctx) {
+export async function handleSlangAiAndExpressionRoutes(ctx) {
   const {
     SLANG_STATUS,
     agentTokenOk,
@@ -442,7 +441,7 @@ export async function handleSlang2(ctx) {
       if (!content) { sendJson({ ok: false, error: 'content 不能为空' }, 400); return true; }
       if (content.length > 50) { sendJson({ ok: false, error: '黑话词条过长（最多 50 字）' }, 400); return true; }
       if (!allowSlangSubmit(key)) { sendJson({ ok: false, error: '黑话提交过于频繁，请稍后再试' }, 429); return true; }
-      const existing = deps.slangEntries.find((e) => e.content === content);
+      const existing = deps.flags.slangEntries.find((e) => e.content === content);
       if (existing) {
         if (existing.status === SLANG_STATUS.CONFIRMED) {
           sendJson({ ok: true, duplicate: true, status: 'confirmed', entry: publicSlangEntry(existing) });
@@ -475,7 +474,7 @@ export async function handleSlang2(ctx) {
         status: SLANG_STATUS.CANDIDATE,
         evidence: context ? [{ key, sender: 'AI提交', text: context.slice(0, 200), time: Date.now() }] : []
       });
-      deps.slangEntries.push(entry);
+      deps.flags.slangEntries.push(entry);
       saveSlangStore();
       if (cfg.slang?.autoResearch !== false) {
         queueSlangTask(() => runSlangResearch([entry]));
@@ -508,7 +507,7 @@ export async function handleSlang2(ctx) {
         key,
         total: list.length,
         entries: list,
-        block: buildSlangContext(deps.slangEntries, cfg.slang?.injectMax ?? 8)
+        block: buildSlangContext(deps.flags.slangEntries, cfg.slang?.injectMax ?? 8)
       });
       return true;
     }

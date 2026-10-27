@@ -16,6 +16,8 @@
 import { setTimeout as sleep } from 'node:timers/promises';
 import { localDayKey } from '../core/local-day.js';
 
+import { createOneBotClient } from '../core/onebot.js';
+
 export function createVoiceOutModule(ctx) {
   const { cfg, log } = ctx;
   const v = cfg.socialV2?.voiceOut ?? {};
@@ -39,22 +41,10 @@ export function createVoiceOutModule(ctx) {
     return `${localDayKey()}:${key}`;
   }
 
+  // 第 5 期 5b：统一实现；语音合成慢，超时 120s、无 426 提示（逐字保留原行为）。
+  const onebot = createOneBotClient({ cfg });
   async function postOneBot(action, params) {
-    const httpUrl = String(cfg.snowluma?.httpUrl || 'http://127.0.0.1:3000').replace(/\/+$/, '');
-    const res = await fetch(`${httpUrl}/${action}`, {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        ...(cfg.snowluma?.accessToken ? { authorization: `Bearer ${cfg.snowluma.accessToken}` } : {}),
-      },
-      body: JSON.stringify(params),
-      signal: AbortSignal.timeout(120_000),
-    });
-    const body = await res.json().catch(() => ({}));
-    if (!res.ok || body.status !== 'ok' || body.retcode !== 0) {
-      throw new Error(`OneBot ${action} 失败: ${body.wording || body.retcode || res.status}`);
-    }
-    return body.data;
+    return onebot.call(action, params, { timeoutMs: 120000, hint426: 'none' });
   }
 
   async function health() {

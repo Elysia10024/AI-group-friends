@@ -9,6 +9,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { atomicWriteJson } from './state-io.js';
 
 function defaultRoot() {
   return path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -28,11 +29,7 @@ export function readTakeover(root = defaultRoot()) {
 }
 
 export function writeTakeover(state, root = defaultRoot()) {
-  const file = takeoverFile(root);
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  const tmp = `${file}.tmp-${process.pid}`;
-  fs.writeFileSync(tmp, JSON.stringify(state, null, 1), 'utf8');
-  fs.renameSync(tmp, file);
+  atomicWriteJson(takeoverFile(root), state);
 }
 
 export function isTakeoverOn(root = defaultRoot()) {

@@ -17,13 +17,14 @@
 //   node scripts/switch-provider.mjs --rollback
 import fs from 'node:fs';
 import path from 'node:path';
+import { aiqunyouPath, projectPath } from './lib/paths.mjs';
 
-const HOME = '<项目根>/dsh-home-legacy';
+const HOME = aiqunyouPath('dsh-home-legacy');
 const CRED = `${HOME}/.credentials.yaml`;
 const SETTINGS = `${HOME}/settings.yaml`;
-const BRIDGE_CFG = '<项目根>/config.json';
-const KEY_FILE = '<项目根>/tmp/new-key.txt';
-const BACKUP_DIR = '<项目根>/tmp/provider-switch-backups';
+const BRIDGE_CFG = projectPath('config.json');
+const KEY_FILE = aiqunyouPath('tmp/new-key.txt');
+const BACKUP_DIR = aiqunyouPath('tmp/provider-switch-backups');
 const REF_NAME = 'INKSTONE_API_KEY';
 const GATEWAY = 'https://discovery-api.intern-ai.org.cn/v1';
 const MARK_BEGIN = '# === inkstone-gateway BEGIN (由 scripts/switch-provider.mjs 写入) ===';

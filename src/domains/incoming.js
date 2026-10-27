@@ -35,22 +35,17 @@ export function createIncomingModule(ctx) {
     allowed,
     api,
     appendActivity,
-    appendRecentMessage,
     appendSocialV2Message,
-    appendSummary,
     auditAndSend,
-    buildContextBlock,
     cancelPendingEntry,
     cancelSocialTimers,
     clearSocialV2Timers,
     collectors,
     convKey,
     currentRoleHint,
-    deliverPrompt,
     drainPromptQueue,
     enqueueForRetry,
     ensureSession,
-    enterActive,
     evaluateWakeTriggerV2,
     extractForwardIds,
     extractMediaFromSegments,
@@ -61,7 +56,6 @@ export function createIncomingModule(ctx) {
     handlePendingAnswer,
     isDirectAddress,
     isQuoteTargetSelf,
-    isSocialEnabled,
     log,
     markReadCalledKeys,
     mdToPlain,
@@ -85,7 +79,6 @@ export function createIncomingModule(ctx) {
     sanitizeRoleName,
     saveSocialV2State,
     saveState,
-    scheduleSocialReply,
     scheduleWakeV2,
     seenForwardIds,
     segmentsToText,
@@ -98,16 +91,15 @@ export function createIncomingModule(ctx) {
     slangSubmitTimes,
     slangWindows,
     social,
-    socialState,
     socialV2,
     state,
     toolCallNames,
-    triggerActiveDurationExit,
     v2TurnStartAt,
     wakeConfigMissCount,
     wakeConfigUpdatedKeys,
     withSlangContext,
     writeRoleState,
+    registry,
   } = ctx;
 
 
@@ -144,8 +136,8 @@ export function createIncomingModule(ctx) {
       log(`忽略名单：丢掉 ${key} 里 ${event.user_id} 的消息（socialV2.ignoreUsers）`);
       return;
     }
-    if (!modeAllowed(key, kind, id, cfg, ctx.currentMode)) {
-      log(`忽略未授权会话 ${key}（当前模式 ${ctx.currentMode}，来自 ${event.user_id}）`);
+    if (!modeAllowed(key, kind, id, cfg, ctx.flags.currentMode)) {
+      log(`忽略未授权会话 ${key}（当前模式 ${ctx.flags.currentMode}，来自 ${event.user_id}）`);
       return;
     }
     // 「关闭聊天功能」（静默模式）= **只静默群聊**（判定见 src/core/mute.js，带单测）：
@@ -248,8 +240,6 @@ export function createIncomingModule(ctx) {
 
     const promptText = buildIncomingPrompt(event, isOwner, key, kind, mediaList, messageRef, textContent);
 
-    if (await handleSocialModeMessage(cfg, event, isOwner, key, kind, mediaList, messageRef, plainContent, quoteTargetIsSelf, textContent)) return;
-
     if (await queueWhenDshDown(key, mediaList, promptText)) return;
 
     if (await deliverIncomingToDsh(cfg, key, mediaList, promptText)) return;
@@ -287,7 +277,7 @@ export function createIncomingModule(ctx) {
       if (accepted.result.value.command.text) await auditAndSend(key, mdToPlain(accepted.result.value.command.text));
       return true;
     }
-    if (cfg.ackMessage && ctx.currentMode !== 'reserved2') await sendToQQ(key, cfg.ackMessage);
+    if (cfg.ackMessage && ctx.flags.currentMode !== 'reserved2') await sendToQQ(key, cfg.ackMessage);
     log(`已投递 ${key}: ${promptText.slice(0, 80)}${promptText.length > 80 ? '…' : ''}`);
     return false;
   }
@@ -311,7 +301,7 @@ export function createIncomingModule(ctx) {
 
   async function handleReserved2Message(event, isOwner, key, kind, mediaList, plainContent, quoteTargetIsSelf, textContent) {
     // 二代仿真模式（reserved2）：唤醒调度
-    if (ctx.currentMode === 'reserved2') {
+    if (ctx.flags.currentMode === 'reserved2') {
       const sender = kind === 'group' ? senderLabel(event.sender, event.user_id) : '私聊';
       appendSocialV2Message(key, sender, textContent, plainContent, quoteTargetIsSelf, isOwner, event.message_id ?? event.msg_id ?? null, mediaList, event.user_id ?? null, extractForwardIds(event.message ?? []));
       // 聊天密度（densityWake）：只记"普通群消息"的时间戳，供 timers.js 判定最近够不够热闹。
@@ -352,90 +342,10 @@ export function createIncomingModule(ctx) {
     return false;
   }
 
-  async function handleSocialModeMessage(cfg, event, isOwner, key, kind, mediaList, messageRef, plainContent, quoteTargetIsSelf, textContent) {
-    // 仿真群友模式：reserved 走状态机（观望/活跃/试探/退场）
-    if (isSocialEnabled()) {
-      const sender = kind === 'group' ? senderLabel(event.sender, event.user_id) : '私聊';
-      appendRecentMessage(key, sender, textContent, plainContent, quoteTargetIsSelf, isOwner, mediaList, messageRef); // AI 始终感知
-      const st = socialState(key);
-
-      // 退场中：收尾发言发出前不再接话，新消息进入摘要
-      if (st.phase === 'exiting') {
-        appendSummary(key, sender, textContent, plainContent, isOwner, mediaList, messageRef);
-        log(`社交模式：${key} 退场中，新消息转入摘要`);
-        return true;
-      }
-
-      // 活跃超时：即使群里一直有人说话，到达随机上限后也主动收尾退场
-      if (st.phase === 'active' && triggerActiveDurationExit(key, st, Date.now())) {
-        appendSummary(key, sender, textContent, plainContent, isOwner, mediaList, messageRef);
-        log(`社交模式：${key} 活跃超时退场中，新消息转入摘要`);
-        return true;
-      }
-
-      // 活跃 / 试探中：有新消息 → 保持活跃（或从试探回到活跃）
-      if (st.phase === 'active' || st.phase === 'probing') {
-        st.phase = 'active';
-        st.lastActiveMessageAt = Date.now();
-        st.probeDeadline = 0;
-        // 私聊：发给你就是叫你，直接即时投递，不等轮询、不参与沉默
-        if (kind === 'private') {
-          const promptText = `${roleHint ? roleHint + '\n\n' : ''}${isOwner ? '【管理员】' : ''}${textContent}${mediaHintFor(key, messageRef, mediaList)}`;
-          scheduleSocialReply(
-            key, promptText,
-            Number(cfg.social?.activeReplyDelayMinMs ?? 2000),
-            Number(cfg.social?.activeReplyDelayMaxMs ?? 8000),
-            '私聊即时回应',
-            false,
-            mediaList
-          );
-          log(`社交模式：${key} 私聊活跃中收到消息，即时投递`);
-          return true;
-        }
-        log(`社交模式：${key} 活跃中收到消息，等待批量检测`);
-        return true;
-      }
-
-      // 启动阶段（观望）：触发条件 ① 明确对 AI 说（含引用机器人自己） ② 普通消息小概率
-      // 指向性判断只基于当前消息自己的文字，不把引用原文算作“在叫 AI”
-      const direct = isDirectAddress(plainContent, event, kind) || quoteTargetIsSelf;
-      const randomTrigger = Math.random() < Number(cfg.social?.triggerProbability ?? 0.15);
-      if (!direct && !randomTrigger) {
-        appendSummary(key, sender, textContent, plainContent, isOwner, mediaList, messageRef);
-        log(`社交模式：观望中未触发 ${key}（${sender}：${plainContent.slice(0, 40)}）`);
-        return true;
-      }
-
-      // 触发成功：进入活跃，贴最近上下文 + 当前消息 + 人格（仅此一次），让 AI 回复
-      enterActive(key);
-      const roleHint = currentRoleHint();
-      const currentLine = (isOwner && kind === 'private') ? `【管理员】${sender}：${textContent}` : `${sender}：${textContent}`;
-      const directionHint = textContent.includes('[引用') ? DIRECTION_HINT + '\n' : '';
-      const replyInstruction = direct
-        ? `请回复消息。\n${directionHint}${SPACE_SPLIT_HINT}`
-        : `请根据情况决定是否回复。如果不需要回应、想潜水/不接话，请只输出 ${SILENT_MARKER}；否则正常回复。\n${directionHint}${SPACE_SPLIT_HINT}`;
-      const promptText = `${roleHint ? roleHint + '\n\n' : ''}【群聊上下文】\n${buildContextBlock(key)}\n【当前消息】${currentLine}${mediaHintFor(key, messageRef, mediaList)}\n\n${replyInstruction}`;
-      if (isOwner && kind === 'private') {
-        log(`社交模式：管理员私聊触发，立即投递 ${key}`);
-        await deliverPrompt(key, promptText, { media: mediaList });
-      } else {
-        scheduleSocialReply(
-          key, promptText,
-          Number(cfg.social?.activeReplyDelayMinMs ?? 2000),
-          Number(cfg.social?.activeReplyDelayMaxMs ?? 8000),
-          '触发进入活跃',
-          false,
-          mediaList
-        );
-      }
-      return true;
-    }
-    return false;
-  }
 
   async function queueWhenDshDown(key, mediaList, promptText) {
     // DSH 重启容错：DSH 不可用时消息入队（不丢），恢复后自动补投
-    if (!ctx.dshReady) {
+    if (!ctx.flags.dshReady) {
       const items = queued.get(key) ?? [];
       if (items.length >= QUEUE_MAX) {
         items.shift();
@@ -511,6 +421,7 @@ export function createIncomingModule(ctx) {
   }
   const adminCommandsMod = createAdminCommandsModule({
     KNOWN_AGENT_TOKENS,
+    registry,
     ROOT,
     allowed,
     cancelPendingEntry,

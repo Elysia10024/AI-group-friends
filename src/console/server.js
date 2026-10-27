@@ -18,18 +18,52 @@ import { rateLimitCheck, reserveSlots, rollbackSlots, RATE_LIMIT_ERROR, hourCapF
 import { resetPreSleepWait, markAiSpoke, recentLimitOf, capList } from '../core/social-state.js';
 import { isChatMuted } from '../core/mute.js';
 import { isRoleplayRole, roleplayToolAllowed } from '../core/role-tools.js';
-import { handleAdmin1, handleAdmin2, handleAdmin3, handleAdmin4, handleAdmin5 } from './routes/admin.js';
-import { handleRole1 } from './routes/role.js';
-import { handleSlang1, handleSlang2 } from './routes/slang.js';
-import { handleSocialV21, handleSocialV22, handleSocialV23, handleSocialV24 } from './routes/socialV2.js';
-import { handleSend1, handleSend2, handleSend3, handleSend4 } from './routes/send.js';
-import { handleSticker1, handleSticker2 } from './routes/sticker.js';
-import { handleMedia1, handleMedia2 } from './routes/media.js';
-import { handleMemory1 } from './routes/memory.js';
+import { checkConsoleAuth } from '../core/console-auth.js';
+import { checkAgentAccess } from '../core/agent-access.js';
+import { checkSendToolAccess } from '../core/send-tool-gate.js';
+import { handleConsoleHome, handleAdminConfigSecurity, handleAdminStateInspect, handleAuthorizeRead, handleAdminDestructive } from './routes/admin.js';
+import { handleRoleModeRoutes } from './routes/role.js';
+import { handleSlangAdminRoutes, handleSlangAiAndExpressionRoutes } from './routes/slang.js';
+import { handleSocialV2ReadWrite, handleSocialV2LogsFeedback, handleSocialV2MessageDetail, handleSocialV2ActiveMembers } from './routes/socialV2.js';
+import { handleSendCore, handleSendRich, handleSendCheckWait, handleSendRecordSentInternal } from './routes/send.js';
+import { handleStickerImageRoutes, handleStickerCollectRoutes } from './routes/sticker.js';
+import { handleForwardMedia, handleImageMessageAndLegacySend } from './routes/media.js';
+import { handlePeopleMemoryRoutes } from './routes/memory.js';
 import { handleQzone1 } from './routes/qzone.js';
 import { handleBilibili } from './routes/bilibili.js';
 import { handleBiliLook } from './routes/bili-look.js';
 import { handleBiliScroll } from './routes/bili-scroll.js';
+
+// 控制台路由链（第 4 期 4b）：**顺序即协议**——有的路由靠正则/兜底匹配吃请求，
+// 位置决定谁先命中；调顺序前必须先弄清路由间的重叠。
+// check-route-inventory 拿「这张表 vs routes/*.js 导出」双向对账（漏调 = 404，多调 = 死代码）。
+const ROUTE_CHAIN = [
+  handleConsoleHome,            // 控制台首页与静态资源
+  handleRoleModeRoutes,         // 角色 / 模式 / 预设
+  handleSlangAdminRoutes,       // 黑话管理面板（CRUD / 批量 / 配置）
+  handleAdminConfigSecurity,    // 配置 / 安全 / 白名单 / token / 测试发送 / 后台提醒
+  handleSocialV2ReadWrite,      // v2 读写主通道（state/unread/recent/mark-read/wake-config/shadow）
+  handleAdminStateInspect,      // states / wake 检视
+  handleSendCore,               // v2 发送三件（poke/message/burst）
+  handleStickerImageRoutes,     // 表情包与图库取用
+  handleSendRich,               // 语音/图片/表情发送 + reload-memory
+  handleStickerCollectRoutes,   // 表情收藏与 QQ 收藏表情管理
+  handleSendCheckWait,          // 发送预检与长轮询等待
+  handleSocialV2LogsFeedback,   // 工具日志 / 反馈 / 我的最近
+  handleSendRecordSentInternal, // 内部记账接口（恒 403，第 5 期清理）
+  handleSocialV2MessageDetail,  // 单条消息详情
+  handleForwardMedia,           // 合并转发取件
+  handleSocialV2ActiveMembers,  // 活跃成员
+  handlePeopleMemoryRoutes,     // 人物表与记忆读写
+  handleQzone1,                 // QQ 空间说说（发表/删除/读/评论）
+  handleBilibili,               // B 站订阅管理（控制台）
+  handleBiliLook,               // 看群友分享的视频（v2 工具）
+  handleBiliScroll,             // 空闲自刷 B 站（v2 工具）
+  handleSlangAiAndExpressionRoutes, // 黑话 AI 提交/查询 + 表达方式
+  handleAuthorizeRead,          // 只读授权预检
+  handleImageMessageAndLegacySend,  // 取图与一代发送路由
+  handleAdminDestructive,       // 最危险三件：session reset / workspace reset / restart
+];
 
 export function startConsoleServer(deps) {
   const {
@@ -305,145 +339,84 @@ export function startConsoleServer(deps) {
      * send-poke 的闸门顺序不同（也不查 agentTokenOk），/api/send/* 是控制台内部通道 ——
      * 这两条各只有一份，没有重复可去，故意保持原样。
      */
+    // 发送工具闸门：判据抽到 core/send-tool-gate.js（9 条单测），这里只做取数与响应落地。
     const gateSendTool = (key, tool, label) => {
-      if (req.headers['x-agent-token'] && !agentTokenOk(key, req.headers['x-agent-token'])) { sendJson({ ok: false, error: 'agent token 无效' }, 403); return null; }
-      if (req.headers['x-agent-token'] && !v2SessionAllowed(key)) { sendJson({ ok: false, error: '目标不在当前模式允许范围内' }, 403); return null; }
-      if (req.headers['x-agent-token'] && !v2ToolEnabled(tool)) { sendJson({ ok: false, error: label }, 403); return null; }
-      if (deps.currentMode !== 'reserved2') { sendJson({ ok: false, error: '该接口仅 reserved2 模式可用' }, 403); return null; }
-      if (!req.headers['x-agent-token']) { sendJson({ ok: false, error: 'reserved2 模式发送必须携带 agent token' }, 403); return null; }
-      const keyMatch = /^(group|private):(\d+)$/.exec(key);
-      if (!keyMatch) { sendJson({ ok: false, error: 'key 格式应为 group:群号 或 private:QQ号' }, 400); return null; }
-      const kind = keyMatch[1];
-      const id = Number(keyMatch[2]);
-      if (!Number.isFinite(id) || id <= 0 || !modeAllowed(key, kind, id, cfg, deps.currentMode)) {
-        sendJson({ ok: false, error: '目标不在当前模式允许范围内' }, 403);
+      const gate = checkSendToolAccess({
+        agentToken: req.headers['x-agent-token'],
+        key,
+        tool,
+        label,
+        currentMode: deps.flags.currentMode,
+        cfg,
+        agentTokenOk,
+        v2SessionAllowed,
+        v2ToolEnabled,
+        modeAllowed,
+      });
+      if (gate.action === 'json') {
+        sendJson({ ok: false, error: gate.error }, gate.status);
         return null;
       }
-      return { kind, id };
+      return gate.gate;
     };
 
-    // 控制台鉴权：所有请求需带 x-console-token 或 ?token=
-    // **例外：控制台自己的两个静态资源**（/console.css、/console.js）。浏览器加载 `<link>`/`<script>`
-    // 时不会带自定义请求头，而页面脚本本身还负责把 `?token=` 引导进 localStorage（鸡生蛋）——
-    // 不放行的话，页面能打开但样式与脚本全 401，看起来就像"UI 没了"。
-    // 它们不含任何机密（没有令牌、没有数据），放行无风险；所有 /api/* 仍然要令牌。
-    const PUBLIC_ASSETS = new Set(['/console.css', '/console.js']);
-    const suppliedToken = url.searchParams.get('token') ?? req.headers['x-console-token'];
-    const isPublicAsset = req.method === 'GET' && PUBLIC_ASSETS.has(url.pathname);
-    if (consoleToken && suppliedToken !== consoleToken && !isPublicAsset) {
-      if (req.method === 'GET' && url.pathname === '/') {
-        res.writeHead(401, { 'content-type': 'text/html; charset=utf-8', ...SECURITY_HEADERS });
-        res.end('<!doctype html><meta charset="utf-8"><title>需要令牌</title><script>const t=prompt(\'请输入控制台访问令牌\');if(t)location.href=\'/?token=\'+encodeURIComponent(t);</script>');
-      } else {
-        sendJson({ ok: false, error: '未授权：请提供控制台访问令牌' }, 401);
-      }
+    // 控制台鉴权 + CSRF：判据抽到 core/console-auth.js（有 9 条单测），这里只负责响应落地。
+    // 两层语义与抽离前逐字一致：
+    //   · 令牌（配了 consoleToken 才校验；/console.css 与 /console.js 例外——浏览器加载静态资源
+    //     不带自定义头，而页面脚本还负责把 ?token= 引导进 localStorage，不放行就"UI 没了"）；
+    //   · CSRF（写操作必须 application/json；带 Origin 时必须来自本机页面）。
+    const auth = checkConsoleAuth({
+      method: req.method,
+      pathname: url.pathname,
+      suppliedToken: url.searchParams.get('token') ?? req.headers['x-console-token'],
+      consoleToken,
+      headers: req.headers,
+      port,
+    });
+    if (auth.action === 'html401') {
+      res.writeHead(401, { 'content-type': 'text/html; charset=utf-8', ...SECURITY_HEADERS });
+      res.end('<!doctype html><meta charset="utf-8"><title>需要令牌</title><script>const t=prompt(\'请输入控制台访问令牌\');if(t)location.href=\'/?token=\'+encodeURIComponent(t);</script>');
       return;
     }
-    // CSRF 防护：所有写操作必须是 application/json，且（若带 Origin）必须来自本机页面。
-    // 默认未配 consoleToken 时，这可阻止任意网页用表单/跨站请求触发
-    // /api/restart、/api/workspace/reset、/api/role 等破坏性接口。
-    if (req.method !== 'GET') {
-      const ctype = String(req.headers['content-type'] ?? '');
-      if (!ctype.toLowerCase().includes('application/json')) {
-        sendJson({ ok: false, error: '请求必须是 application/json' }, 415);
-        return;
-      }
-      const origin = req.headers['origin'];
-      if (origin) {
-        let originHost = '';
-        try { originHost = new URL(String(origin)).host; } catch { /* Origin 不是合法 URL 就当没有 Origin：下面按 host 白名单校验，取不到即拒绝跨站 */ }
-        if (![`127.0.0.1:${port}`, `localhost:${port}`].includes(originHost)) {
-          sendJson({ ok: false, error: '跨站请求被拒绝' }, 403);
-          return;
-        }
-      }
+    if (auth.action === 'json') {
+      sendJson({ ok: false, error: auth.error }, auth.status);
+      return;
     }
     try {
-      // 空 agent token 一律拒绝，防止 MCP 传入空字符串时被当作“管理端/无 token”绕过校验
-      if (req.headers['x-agent-token'] === '') {
-        sendJson({ ok: false, error: 'agent token 不能为空' }, 403);
-        return;
-      }
-      // 静默模式（「关闭聊天功能」，只静默群聊）：带 agent token 的 v2 调用一律不许碰群会话 ——
-      // 用户要求"除了管理员指令外什么都不读取"，这是省 token 的另一半（入站那一半在 incoming.js）。
-      // 管理员指令由桥侧硬执行、不经过这些路由，所以关了之后仍能再开。
-      if (req.headers['x-agent-token'] && url.pathname.startsWith('/api/socialV2/')) {
-        const qKey = String(url.searchParams.get('key') ?? '');
-        if (qKey && isChatMuted(readRoleState().mode, qKey)) {
-          sendJson({ ok: false, error: '静默模式已开启（关闭聊天功能）：群聊不再读取' }, 403);
-          return;
+      // try 内七道访问闸门（第 4 期 4c-1）：原来是七段并行 if，现收进单个具名函数；
+      // 顺序与语义逐字未变。返回 true = 已响应（分发器 return），false = 放行给路由链。
+      // 注：token 鉴权与 CSRF 两道闸门在 try **外**（历史如此）——搬进 try 会把它们的
+      // 抛错语义从「连接断开」变成「500」，属行为变更，故留在原位。
+      function applyAccessGates() {
+        // 判据抽到 core/agent-access.js（9 条单测）：七道闸门的顺序与每条消息逐条钉死。
+        // 这里只负责取数（带 token 才读角色状态，与抽离前一样省掉无谓的文件读）与响应落地。
+        const hasAgent = Boolean(req.headers['x-agent-token']);
+        const gate = checkAgentAccess({
+          headers: req.headers,
+          pathname: url.pathname,
+          method: req.method,
+          queryKey: url.searchParams.get('key'),
+          mode: hasAgent ? readRoleState().mode : '',
+          role: hasAgent ? readRoleState(String(url.searchParams.get('key') ?? '').trim())?.role : undefined,
+          paused: socialV2.paused,
+          socialV2EnabledOff: cfg.socialV2?.enabled === false,
+          currentMode: deps.flags.currentMode,
+          isChatMuted,
+          isRoleplayRole,
+          roleplayToolAllowed,
+        });
+        if (gate.action === 'json') {
+          sendJson({ ok: false, error: gate.error }, gate.status);
+          return true;
         }
+        return false;
       }
-      // 角色扮演（宠物等非小鲸鱼角色）期间的硬门禁：只放行聊天/看消息/识图/收尾。
-      // 用户要求「宠物与小鲸鱼全线隔离，仅保留识图，取消发图/语音/学习等」（2026-10-27）——
-      // 角色卡/提示词只是软约束，这里才是真正的工具白名单。
-      if (req.headers['x-agent-token'] && (url.pathname.startsWith('/api/socialV2/') || url.pathname.startsWith('/api/images/'))) {
-        const gateKey = String(url.searchParams.get('key') ?? '').trim();
-        const roleNow = String(readRoleState(gateKey)?.role ?? '').trim();
-        if (isRoleplayRole(roleNow) && !roleplayToolAllowed(url.pathname)) {
-          sendJson({ ok: false, error: '当前角色只能聊天和看图片；发图/语音/视频/学习这类工具都用不了' }, 403);
-          return;
-        }
+      if (applyAccessGates()) return;
+      const ctx = Object.assign(Object.create(deps), { req, res, url, sendJson, readBody, gateSendTool, deps, fs, path, http, crypto, SECURITY_HEADERS, agentTokenOk, v2SessionAllowed, v2ToolEnabled, consoleToken, setConsoleToken: (t) => { consoleToken = t; }, port, rateLimitCheck, reserveSlots, rollbackSlots, RATE_LIMIT_ERROR, hourCapFor, resetPreSleepWait, markAiSpoke, recentLimitOf, capList });
+      // 路由分发（第 4 期 4b）：28 行散 if 收成具名链表的循环；顺序与语义逐字未变。
+      for (const route of ROUTE_CHAIN) {
+        if (await route(ctx)) return;
       }
-      // 暂停二代 AI 时，所有带 agent token 的 v2 工具调用一律拒绝
-      if (socialV2.paused && req.headers['x-agent-token'] && (url.pathname.startsWith('/api/socialV2/') || url.pathname.startsWith('/api/send/') || url.pathname.startsWith('/api/images/'))) {
-        sendJson({ ok: false, error: 'AI 已暂停，当前不允许执行 v2 工具' }, 403);
-        return;
-      }
-      // 二代模式总开关：关闭后 agent token 调用的 v2 工具全部拒绝（控制台仍可管理）
-      if (cfg.socialV2?.enabled === false && req.headers['x-agent-token'] && (url.pathname.startsWith('/api/socialV2/') || url.pathname.startsWith('/api/send/') || url.pathname.startsWith('/api/images/'))) {
-        sendJson({ ok: false, error: '二代模式已关闭，当前不允许执行 v2 工具' }, 403);
-        return;
-      }
-      // 模式隔离：带 agent token 的 v2 接口只允许在 reserved2 模式下使用
-      if (req.headers['x-agent-token'] && url.pathname.startsWith('/api/socialV2/') && deps.currentMode !== 'reserved2') {
-        sendJson({ ok: false, error: '该接口仅 reserved2 模式可用' }, 403);
-        return;
-      }
-      // 管理端专用 v2 接口：带 agent token 的请求一律拒绝，防止 MCP 工具越权访问控制台功能
-      const adminOnlyV2Paths = ['/api/socialV2/config', '/api/socialV2/activity', '/api/socialV2/reset', '/api/socialV2/states', '/api/socialV2/wake'];
-      if (req.headers['x-agent-token'] && (adminOnlyV2Paths.includes(url.pathname) || (url.pathname === '/api/socialV2/feedback' && req.method === 'GET') || (url.pathname === '/api/socialV2/tool-log' && req.method === 'GET'))) {
-        sendJson({ ok: false, error: '该接口仅控制台可用' }, 403);
-        return;
-      }
-      // 表情库管理接口只允许控制台（带 agent token 的 v2 工具一律拒绝，防止越权改库）
-      if (req.headers['x-agent-token'] && (url.pathname === '/api/stickers' || url.pathname.startsWith('/api/stickers/'))) {
-        sendJson({ ok: false, error: '该接口仅控制台可用' }, 403);
-        return;
-      }
-      // 注意：拆路由时这几个名字漏了传递 —— 路由模块从 ctx 解构，而这里没给，
-      // 于是 /api/socialV2/send-* /api/send/* /api/media/* 全都挂在
-      // `rateLimitCheck is not a function`（发送通道整体不可用）。
-      const ctx = Object.assign(Object.create(deps), { req, res, url, sendJson, readBody, gateSendTool, deps, fs, path, http, crypto, SECURITY_HEADERS, agentTokenOk, v2SessionAllowed, v2ToolEnabled, consoleToken, port, rateLimitCheck, reserveSlots, rollbackSlots, RATE_LIMIT_ERROR, hourCapFor, resetPreSleepWait, markAiSpoke, recentLimitOf, capList });
-      if (await handleAdmin1(ctx)) return;
-      if (await handleRole1(ctx)) return;
-      if (await handleSlang1(ctx)) return;
-      if (await handleAdmin2(ctx)) return;
-      if (await handleSocialV21(ctx)) return;
-      if (await handleAdmin3(ctx)) return;
-      if (await handleSend1(ctx)) return;
-      if (await handleSticker1(ctx)) return;
-      if (await handleSend2(ctx)) return;
-      if (await handleSticker2(ctx)) return;
-      if (await handleSend3(ctx)) return;
-      if (await handleSocialV22(ctx)) return;
-      if (await handleSend4(ctx)) return;
-      if (await handleSocialV23(ctx)) return;
-      if (await handleMedia1(ctx)) return;
-      if (await handleSocialV24(ctx)) return;
-      if (await handleMemory1(ctx)) return;
-      // QQ 空间说说：发表 / 删除 / 读列表（带 agent token）＋ 本地账本只读（面板用）
-      if (await handleQzone1(ctx)) return;
-      // B 站视频订阅管理（控制台专用；带 agent token 的请求在路由里拒绝）
-      if (await handleBilibili(ctx)) return;
-      // 看群友分享的 B 站视频（二代工具通道；配额在域里）
-      if (await handleBiliLook(ctx)) return;
-      // 她自己刷 B 站（空闲时段；频率/日上限在域里）
-      if (await handleBiliScroll(ctx)) return;
-      if (await handleSlang2(ctx)) return;
-      if (await handleAdmin4(ctx)) return;
-      if (await handleMedia2(ctx)) return;
-      if (await handleAdmin5(ctx)) return;
       sendJson({ ok: false, error: 'not found' }, 404);
     } catch (error) {
       const status = Number(error?.statusCode) || 500;

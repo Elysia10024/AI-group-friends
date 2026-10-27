@@ -14,11 +14,15 @@ import { CONFIG_DEFAULTS, CONFIG_RANGES, CONFIG_ENUMS } from '../../config.js';
 // ctx 来自 server.js：
 //   Object.assign(Object.create(deps), { req, res, url, sendJson, readBody, gateSendTool })
 // 用 Object.create(deps) 而不是展开，是为了让 deps 上的 get/set 访问器继续生效。
+//
+// 2026-10-28 第 45 轮修：本文件用 node:crypto 生成随机控制台令牌。此前没 import，
+// 走的是 Node 22+ 的**全局 WebCrypto**（它没有 randomBytes）→ “生成随机令牌”永远抛错。
+import crypto from 'node:crypto';
 
 /**
  * 覆盖 1 条路由，原 L340–L349
  */
-export async function handleAdmin1(ctx) {
+export async function handleConsoleHome(ctx) {
   const {
     ROOT,
     SECURITY_HEADERS,
@@ -89,7 +93,7 @@ export async function handleAdmin1(ctx) {
 /**
  * 覆盖 18 条路由，原 L714–L1214
  */
-export async function handleAdmin2(ctx) {
+export async function handleAdminConfigSecurity(ctx) {
   const {
     KNOWN_AGENT_TOKENS,
     ROOT,
@@ -106,6 +110,7 @@ export async function handleAdmin2(ctx) {
     clearAllSocialV2Timers,
     collectors,
     consoleToken,
+    setConsoleToken,
     deliverPrompt,
     deps,
     drainAllPromptQueues,
@@ -173,7 +178,7 @@ export async function handleAdmin2(ctx) {
 
   function routeSocialV2Reset() {
     if (req.method === 'POST' && url.pathname === '/api/socialV2/reset') {
-      deps.sessionEpoch++;
+      deps.flags.sessionEpoch++;
       sessionPromises.clear();
       clearAllSocialV2Timers();
       drainAllPromptQueues('二代状态已重置');
@@ -304,19 +309,19 @@ export async function handleAdmin2(ctx) {
         sendJson({ ok: false, error: 'id 无效' }, 400);
         return true;
       }
-      if (!modeAllowed(key, kind, id, cfg, deps.currentMode)) {
-        sendJson({ ok: false, error: `该会话不在当前模式（${deps.currentMode}）允许范围内` }, 403);
+      if (!modeAllowed(key, kind, id, cfg, deps.flags.currentMode)) {
+        sendJson({ ok: false, error: `该会话不在当前模式（${deps.flags.currentMode}）允许范围内` }, 403);
         return true;
       }
       if (!deps.state.sessions[key] && !allowed(kind, id, cfg)) {
         sendJson({ ok: false, error: '该会话不在白名单内，且尚未创建' }, 403);
         return true;
       }
-      if (!deps.dshReady) {
+      if (!deps.flags.dshReady) {
         sendJson({ ok: false, error: 'DSH 当前不可用，请稍后再试' }, 503);
         return true;
       }
-      const isV2 = deps.currentMode === 'reserved2';
+      const isV2 = deps.flags.currentMode === 'reserved2';
       const roleState = readRoleState();
       const roleLine = roleState.role ? `【当前角色】${roleState.role}（完整角色卡请调用 qq_get_prompt 查看）\n\n` : '';
       // 二代必须带会话令牌，否则 AI 调用任何 MCP 状态/发送工具都会被拒。
@@ -367,7 +372,7 @@ export async function handleAdmin2(ctx) {
       if (!message) { sendJson({ ok: false, error: '消息不能为空' }, 400); return true; }
       if (SENSITIVE_RE.test(message)) { sendJson({ ok: false, error: '消息含敏感信息，已阻止发送' }, 403); return true; }
       if (!allowed(kind, id, cfg)) { sendJson({ ok: false, error: `目标不在白名单内（${kind} ${id}），请先加入白名单` }, 403); return true; }
-      if (!modeAllowed(`${kind}:${id}`, kind, id, cfg, deps.currentMode)) { sendJson({ ok: false, error: `当前模式（${deps.currentMode}）不允许向 ${kind}:${id} 发送测试消息` }, 403); return true; }
+      if (!modeAllowed(`${kind}:${id}`, kind, id, cfg, deps.flags.currentMode)) { sendJson({ ok: false, error: `当前模式（${deps.flags.currentMode}）不允许向 ${kind}:${id} 发送测试消息` }, 403); return true; }
       try {
         const safeMessage = escapeCqText(redactKnownTokensOnly(message));
         // 这里原本多套了一层 `text(safeMessage)`，而 `text` 在桥里既不是函数也不是注入名 ——
@@ -517,7 +522,9 @@ export async function handleAdmin2(ctx) {
       atomicWriteJson(configFile, file);
       cfg.consoleToken = generated ? '' : newToken;
       atomicWriteText(path.join(STATE_DIR, 'console-token'), newToken);
-      consoleToken = newToken;
+      // 第 45 轮修：consoleToken 是从 ctx 解构的常量，直接赋值会 TypeError。
+      // 由 server.js 注入的 setter 更新闭包里的 let consoleToken（后续请求立即生效）。
+      if (typeof setConsoleToken === 'function') setConsoleToken(newToken);
       log(`控制台：访问令牌已${generated ? '重新生成' : '手动修改'}（不记录完整值）`);
       sendJson({ ok: true, token: newToken, generated });
       return true;
@@ -529,7 +536,7 @@ export async function handleAdmin2(ctx) {
 /**
  * 覆盖 2 条路由，原 L1571–L1613
  */
-export async function handleAdmin3(ctx) {
+export async function handleAdminStateInspect(ctx) {
   const {
     cfg,
     deps,
@@ -576,12 +583,12 @@ export async function handleAdmin3(ctx) {
       const key = String(body.key ?? '').trim();
       const reason = String(body.reason ?? 'admin').trim() || 'admin';
       if (!key) { sendJson({ ok: false, error: 'key 不能为空' }, 400); return true; }
-      if (deps.currentMode !== 'reserved2') { sendJson({ ok: false, error: '该接口仅 reserved2 模式可用' }, 403); return true; }
+      if (deps.flags.currentMode !== 'reserved2') { sendJson({ ok: false, error: '该接口仅 reserved2 模式可用' }, 403); return true; }
       const keyMatch = /^(group|private):(\d+)$/.exec(key);
       if (!keyMatch) { sendJson({ ok: false, error: 'key 格式应为 group:群号 或 private:QQ号' }, 400); return true; }
       const kind = keyMatch[1];
       const id = Number(keyMatch[2]);
-      if (!Number.isFinite(id) || id <= 0 || !modeAllowed(key, kind, id, cfg, deps.currentMode)) {
+      if (!Number.isFinite(id) || id <= 0 || !modeAllowed(key, kind, id, cfg, deps.flags.currentMode)) {
         sendJson({ ok: false, error: '目标不在当前模式允许范围内' }, 403);
         return true;
       }
@@ -604,7 +611,7 @@ export async function handleAdmin3(ctx) {
 /**
  * 覆盖 1 条路由，原 L2847–L2868
  */
-export async function handleAdmin4(ctx) {
+export async function handleAuthorizeRead(ctx) {
   const {
     agentTokenOk,
     cfg,
@@ -627,14 +634,14 @@ export async function handleAdmin4(ctx) {
       const token = String(body.token ?? '').trim();
       const keyMatch = /^(group|private):(\d+)$/.exec(key);
       if (!keyMatch) { sendJson({ ok: false, error: 'key 格式应为 group:群号 或 private:QQ号' }, 400); return true; }
-      if (deps.currentMode === 'reserved2' && !agentTokenOk(key, token)) {
+      if (deps.flags.currentMode === 'reserved2' && !agentTokenOk(key, token)) {
         sendJson({ ok: false, error: 'reserved2 模式下旧只读工具不可用，请使用带会话令牌的 v2 读工具' }, 403);
         return true;
       }
       if (token && !agentTokenOk(key, token)) { sendJson({ ok: false, error: 'agent token 无效' }, 403); return true; }
       const kind = keyMatch[1];
       const id = Number(keyMatch[2]);
-      if (!Number.isFinite(id) || id <= 0 || !modeAllowed(key, kind, id, cfg, deps.currentMode)) {
+      if (!Number.isFinite(id) || id <= 0 || !modeAllowed(key, kind, id, cfg, deps.flags.currentMode)) {
         sendJson({ ok: false, error: '当前模式不允许读取该会话' }, 403);
         return true;
       }
@@ -648,7 +655,7 @@ export async function handleAdmin4(ctx) {
 /**
  * 覆盖 3 条路由，原 L3015–L3128
  */
-export async function handleAdmin5(ctx) {
+export async function handleAdminDestructive(ctx) {
   const {
     ACTIVITY_LOG,
     KNOWN_AGENT_TOKENS,
@@ -705,7 +712,7 @@ export async function handleAdmin5(ctx) {
       const body = await readBody();
       const key = String(body.key ?? '');
       if (!key || !deps.state.sessions[key]) { sendJson({ ok: false, error: '会话不存在' }, 404); return true; }
-      deps.sessionEpoch++;
+      deps.flags.sessionEpoch++;
       const oldSessionId = deps.state.sessions[key];
       delete deps.state.sessions[key];
       reverse.delete(oldSessionId);
@@ -756,7 +763,7 @@ export async function handleAdmin5(ctx) {
 
   async function routeWorkspaceReset() {
     if (req.method === 'POST' && url.pathname === '/api/workspace/reset') {
-      deps.sessionEpoch++;
+      deps.flags.sessionEpoch++;
       let archivedCount = 0;
       try {
         const ws = unwrap(await api.workspace.list({}), 'workspace.list');

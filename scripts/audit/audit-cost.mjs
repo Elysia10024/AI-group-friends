@@ -1,6 +1,7 @@
 // 成本审计：把「钱花在哪」拆到请求级 / 回合级 / 小时级，并统计空转回合。
 import fs from 'node:fs';
 import { parseArgs, loadSession, printHeader } from './audit-lib.mjs';
+import { projectPath } from '../lib/paths.mjs';
 
 const args = parseArgs();
 if (args.help) { printUsage(); process.exit(0); }
@@ -114,7 +115,7 @@ console.log('\n=========== 5) 压缩事件 ===========');
 console.log('  含 compact 的行: ' + compactionCount + '（时间戳可解析 ' + compactionTimes.length + ' 个）');
 
 console.log('\n=========== 6) 桥侧：唤醒原因 & 空转回合 ===========');
-const blog = fs.readFileSync('<项目根>/state/bridge.log', 'utf8').split('\n');
+const blog = fs.readFileSync(projectPath('state/bridge.log'), 'utf8').split('\n');
 const reasons = new Map();
 let noText = 0, sent = 0, wake = 0, limited = 0;
 for (const l of blog) {

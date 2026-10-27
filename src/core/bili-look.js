@@ -16,8 +16,8 @@ export const BILI_LOOK_DEFAULTS = {
   frameIntervalSec: 2,
   maxFrames: 150,
   maxDurationSec: 300,
-  pythonPath: '',
-  ffmpegPath: '',
+  pythonPath: '<外部工具目录>\\bili-videoread\\.venv\\Scripts\\python.exe',
+  ffmpegPath: '<外部工具目录>\\bili-videoread\\.venv\\lib\\site-packages\\imageio_ffmpeg\\binaries\\ffmpeg-win-x86_64-v7.1.exe',
   downloadTimeoutMs: 180000
 };
 

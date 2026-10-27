@@ -1,7 +1,8 @@
 // 记忆注入的实际成本占比：能不能靠"数据库+定向查找"省下来
 import fs from 'node:fs';
+import { projectPath } from '../lib/paths.mjs';
 
-const STATE = '<项目根>/state/social-v2.json';
+const STATE = projectPath('state/social-v2.json');
 const j = JSON.parse(fs.readFileSync(STATE, 'utf8'));
 const st = j.conversations['group:20000001'] ?? {};
 

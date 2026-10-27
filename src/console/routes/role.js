@@ -15,7 +15,7 @@
 /**
  * 覆盖 7 条路由，原 L349–L459
  */
-export async function handleRole1(ctx) {
+export async function handleRoleModeRoutes(ctx) {
   const {
     ROOT,
     STATE_DIR,
@@ -61,11 +61,11 @@ export async function handleRole1(ctx) {
     if (req.method === 'GET' && url.pathname === '/api/status') {
       const rs = readRoleState();
       sendJson({
-        mode: deps.currentMode,
-        closedAgentPreset: deps.closedAgentPreset,
+        mode: deps.flags.currentMode,
+        closedAgentPreset: deps.flags.closedAgentPreset,
         role: rs.role ?? null,
         roleMode: rs.mode ?? 'active',
-        dshReady: deps.dshReady,
+        dshReady: deps.flags.dshReady,
         ownerQQ: cfg.ownerQQ ?? null,
         allowGroups: cfg.allow?.groups ?? [],
         allowPrivate: cfg.allow?.private ?? [],
@@ -103,14 +103,14 @@ export async function handleRole1(ctx) {
         ...(body.closedAgentPreset ? { closedAgentPreset: String(body.closedAgentPreset) } : { closedAgentPreset: existing.closedAgentPreset ?? 'router-standard' })
       };
       atomicWriteJson(path.join(STATE_DIR, 'mode.json'), next);
-      if (next.closedAgentPreset) deps.closedAgentPreset = next.closedAgentPreset;
-      if (deps.currentMode === 'reserved2' && body.mode !== 'reserved2') {
+      if (next.closedAgentPreset) deps.flags.closedAgentPreset = next.closedAgentPreset;
+      if (deps.flags.currentMode === 'reserved2' && body.mode !== 'reserved2') {
         clearAllSocialV2Timers();
         drainAllPromptQueues('模式切换，已取消排队中的投递');
         log('控制台：模式离开二代仿真模式，清理 reserved2 定时器与排队投递');
       }
-      deps.currentMode = body.mode;
-      deps.lastMode = body.mode;
+      deps.flags.currentMode = body.mode;
+      deps.flags.lastMode = body.mode;
       if (body.mode === 'reserved2') {
         for (const key of socialV2.conversations.keys()) {
           setupSleepTimerV2(key);

@@ -53,7 +53,7 @@ export function createSlangModule(ctx) {
   } = ctx;
 
   function saveSlangStore() {
-    try { saveSlang(SLANG_FILE, ctx.slangEntries); } catch (error) { log('保存黑话库失败:', error?.message ?? error); }
+    try { saveSlang(SLANG_FILE, ctx.flags.slangEntries); } catch (error) { log('保存黑话库失败:', error?.message ?? error); }
   }
 
   // ── 表达方式（「什么场景 → 怎么说」）──────────────────────────────
@@ -64,7 +64,7 @@ export function createSlangModule(ctx) {
   }
 
   async function runExpressionExtraction(key) {
-    if (!ctx.dshReady) return { ok: false, error: 'DSH 未就绪' };
+    if (!ctx.flags.dshReady) return { ok: false, error: 'DSH 未就绪' };
     let messages = (slangWindows.get(key) ?? []).slice(-40);
     if (messages.length < 3) {
       // 学习窗口是内存态，桥重启后是空的 —— 退回该会话最近的群聊记录（手动触发时才走这里）。
@@ -205,7 +205,7 @@ export function createSlangModule(ctx) {
 
   async function runSlangExtraction(key) {
     if (cfg.slang?.enabled === false) return;
-    if (!ctx.dshReady) return;
+    if (!ctx.flags.dshReady) return;
     const messages = slangWindows.get(key) ?? [];
     const min = Math.max(1, Number(cfg.slang?.extractMinMessages ?? 10));
     if (messages.length < min) return;
@@ -257,7 +257,7 @@ export function createSlangModule(ctx) {
         const idx = Number(item.source_id) - 1;
         const src = Number.isInteger(idx) && idx >= 0 && idx < messages.length ? messages[idx] : null;
         const evidence = src ? [{ key, sender: src.sender, text: src.text, time: src.time }] : [];
-        const result = upsertSlangEntry(ctx.slangEntries, item.content, { evidence, countIncrement: 1 });
+        const result = upsertSlangEntry(ctx.flags.slangEntries, item.content, { evidence, countIncrement: 1 });
         // 规则引擎：谐音 / 身份外号 / 拼音缩写 / 数字 / 叠字 —— 命中即直接补释义并收录，
         // 不用等"重复出现≥2次"的模型推断，也不用等管理员确认（规则表是人工策展的，精度高）。
         if (result.entry && !result.entry.meaning) {
@@ -295,7 +295,7 @@ export function createSlangModule(ctx) {
   async function runSlangResearch(candidates) {
     if (!candidates || !candidates.length) return;
     if (cfg.slang?.enabled === false) return;
-    if (!ctx.dshReady) return;
+    if (!ctx.flags.dshReady) return;
     // 过滤掉已经在研究队列里的候选，避免同一批被重复排队研究。
     const targets = candidates.filter((e) => e && !slangResearchingIds.has(e.id));
     if (!targets.length) return;
@@ -320,7 +320,7 @@ export function createSlangModule(ctx) {
       const output = await waitLearnerTurn(sessionId);
       const results = parseResearchJson(output);
       for (const r of results) {
-        const entry = ctx.slangEntries.find((e) => e.content === r.content);
+        const entry = ctx.flags.slangEntries.find((e) => e.content === r.content);
         if (!entry) continue;
         // 只有明确确认（confirmed: true）的结果才写入解释字段；
         // 不确定/未确认的结果保留原状，允许后续再次研究。
@@ -350,10 +350,10 @@ export function createSlangModule(ctx) {
 
   function maybeQueueSlangExtraction(key) {
     if (cfg.slang?.enabled === false) return;
-    if (!ctx.dshReady) return;
+    if (!ctx.flags.dshReady) return;
     // 角色扮演（宠物等非小鲸鱼角色）期间不学黑话：学到的词进的是小鲸鱼的库，
     // 宠物在群里聊的内容不该被当成"小鲸鱼的语料"（2026-10-27 全线隔离）。
-    const roleNow = String((typeof readRoleState === 'function' ? readRoleState(key)?.role : '') ?? '').trim();
+    const roleNow = String(readRoleState(key)?.role ?? '').trim();
     if (roleNow && roleNow !== '小鲸鱼') return;
     const cooldown = Number(cfg.slang?.extractCooldownMs ?? 300000);
     const last = slangExtractionCooldowns.get(key) ?? 0;
@@ -414,7 +414,7 @@ export function createSlangModule(ctx) {
   // 已确认黑话的公开列表（按出现次数排序，最多 injectMax 条）。
   function confirmedSlangListV2() {
     const max = Math.max(1, Math.min(30, Number(cfg.slang?.injectMax) || 8));
-    return ctx.slangEntries
+    return ctx.flags.slangEntries
       .filter((e) => e.status === SLANG_STATUS.CONFIRMED && e.content && e.meaning)
       .sort((a, b) => (Number(b.count) || 0) - (Number(a.count) || 0))
       .slice(0, max)
@@ -426,7 +426,7 @@ export function createSlangModule(ctx) {
     const timeLine = `【当前时间】${now.toLocaleString('zh-CN', { hour12: false })}（${Intl.DateTimeFormat().resolvedOptions().timeZone}）`;
     const parts = [timeLine];
     if (cfg.slang?.enabled !== false) {
-      const block = buildSlangContext(ctx.slangEntries, cfg.slang?.injectMax ?? 8);
+      const block = buildSlangContext(ctx.flags.slangEntries, cfg.slang?.injectMax ?? 8);
       if (block) parts.push(block);
     }
     return parts.join('\n\n') + '\n\n' + promptText;

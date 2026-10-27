@@ -14,8 +14,9 @@
 // reserved2 门禁 / key 格式 / 白名单全查了 —— 说说是**公开发布**，比群里发一句更需要这层闸门。
 // 最后一条（mood-status）是控制台通道：不带 agent token，只读本地账本，不碰 QQ。
 //
-// 文件头这段是给读代码的人看的：路由里每一处 `v2ToolEnabled('xxx')` 的字面量都被
+// 文件头这段是给读代码的人看的：路由里每一处 v2ToolEnabled(<flag 名>) 的字面量都被
 // scripts/check-tool-flags.mjs 盯着（配置 / 界面 / 代码 / qq_get_prompt 清单四处必须一致）。
+// 注释里别把示例 flag 名写成带引号的字面量形态：守卫扫的是带引号字面量，会把注释里的示例当代码。
 export async function handleQzone1(ctx) {
   const {
     gateSendTool,

@@ -12,11 +12,12 @@
 //   Object.assign(Object.create(deps), { req, res, url, sendJson, readBody, gateSendTool })
 // 用 Object.create(deps) 而不是展开，是为了让 deps 上的 get/set 访问器继续生效。
 import { gateSendRate } from '../../core/send-gate.js';
+import { withSendQuota } from '../../core/send-quota.js';
 
 /**
  * 覆盖 3 条路由，原 L1613–L1928
  */
-export async function handleSend1(ctx) {
+export async function handleSendCore(ctx) {
   const {
     SENSITIVE_RE,
     agentTokenOk,
@@ -67,7 +68,7 @@ export async function handleSend1(ctx) {
       const key = String(body.key ?? '').trim();
       const targetUserId = String(body.targetUserId ?? body.userId ?? '').trim();
       if (!key) { sendJson({ ok: false, error: 'key 不能为空' }, 400); return true; }
-      if (deps.currentMode !== 'reserved2') { sendJson({ ok: false, error: '该接口仅 reserved2 模式可用' }, 403); return true; }
+      if (deps.flags.currentMode !== 'reserved2') { sendJson({ ok: false, error: '该接口仅 reserved2 模式可用' }, 403); return true; }
       if (!req.headers['x-agent-token']) { sendJson({ ok: false, error: 'reserved2 模式发送拍一拍必须携带 agent token' }, 403); return true; }
       if (!agentTokenOk(key, req.headers['x-agent-token'])) { sendJson({ ok: false, error: 'agent token 无效' }, 403); return true; }
       if (!v2SessionAllowed(key)) { sendJson({ ok: false, error: '目标不在当前模式允许范围内' }, 403); return true; }
@@ -77,7 +78,7 @@ export async function handleSend1(ctx) {
       if (!keyMatch) { sendJson({ ok: false, error: 'key 格式应为 group:群号 或 private:QQ号' }, 400); return true; }
       const kind = keyMatch[1];
       const id = Number(keyMatch[2]);
-      if (!Number.isFinite(id) || id <= 0 || !modeAllowed(key, kind, id, cfg, deps.currentMode)) {
+      if (!Number.isFinite(id) || id <= 0 || !modeAllowed(key, kind, id, cfg, deps.flags.currentMode)) {
         sendJson({ ok: false, error: '当前模式不允许操作该会话' }, 403);
         return true;
       }
@@ -328,36 +329,50 @@ export async function handleSend1(ctx) {
         // 打码同样不会把真正敏感的内容发出去。
         if (SENSITIVE_RE.test(messages[i])) messages[i] = redactSensitiveText(messages[i]);
       }
-      try {
-        const st = getSocialV2State(key);
-        const now = Date.now();
-        if (!gateSendRate({ st, sendCfg, count: messages.length, now, key, log, sendJson, rateLimitCheck, hourCapFor })) return true;
-        // 先预占发送额度，避免并发绕过限频
-        st.sendTimes = reserveSlots(st.sendTimes, { count: messages.length, now });
-        const delays = computeGapsV2(messages, 'auto', undefined, undefined, sendCfg);
-        const sentMessages = await sendMessagesV2(key, messages, delays);
-        recordSentMessagesV2(key, sentMessages);
-        markAiSpoke(st, now);
-        saveSocialV2State();
-        log(`[reserved2] 工具分条发送 ${key}: 成功 ${sentMessages.length}/${messages.length} 条`);
-        appendActivity(`${key} [reserved2] 工具分条发送：成功 ${sentMessages.length}/${messages.length} 条`);
-        if (sentMessages.length > 0) scheduleReplyCheckV2(key);
-        const burstHint = messages.length >= 3 ? '你已经连发了多条，确认是必要的吗？真人很少一口气补完。' : undefined;
-        const spaceWarn = findCjkSpaceWarning(messages);
-        const splitWarn = findSplitBoundaryWarning(messages);
-        sendJson({ ok: true, key, sent: sentMessages.length, failed: messages.length - sentMessages.length, ...(burstHint ? { hint: burstHint } : {}), ...(spaceWarn ? { warn: spaceWarn } : {}), ...(splitWarn ? { splitWarn } : {}) });
-      } catch (error) {
+      // 第 17 轮：预占/回滚三步舞收敛到 core/send-quota.js（D-01 那类 bug 的根治点）。
+      const st = getSocialV2State(key);
+      const now = Date.now();
+      const quota = await withSendQuota({
+        st,
+        count: messages.length,
+        now,
+        reserveSlots,
+        rollbackSlots,
+        gate: () => gateSendRate({ st, sendCfg, count: messages.length, now, key, log, sendJson, rateLimitCheck, hourCapFor }),
+        run: async () => {
+          const delays = computeGapsV2(messages, 'auto', undefined, undefined, sendCfg);
+          return sendMessagesV2(key, messages, delays);
+        },
+      });
+      if (quota.gateFailed) return true;
+      if (!quota.ok) {
+        const error = quota.error;
         if (error?.sent?.length) {
           recordSentMessagesV2(key, error.sent);
           log(`[reserved2] 工具分条发送部分成功 ${error.sent.length}/${messages.length} 条，已记录已发消息`);
         }
-        // 失败/未发出的消息回滚预占的发送额度，避免假 429。
-        const sentCount = Array.isArray(error?.sent) ? error.sent.length : 0;
-        const failedCount = Math.max(0, messages.length - sentCount);
-        st.sendTimes = rollbackSlots(st.sendTimes, { count: failedCount, now });
-        saveSocialV2State();
+        if (quota.rolledBack) {
+          try {
+            saveSocialV2State();
+          } catch (saveError) {
+            log(`[reserved2] 回滚后落盘失败 (${key}):`, saveError?.message ?? saveError);
+          }
+        }
+        if (quota.rollbackError) log(`[reserved2] 回滚发送额度失败 (${key}):`, quota.rollbackError?.message ?? quota.rollbackError);
         sendJson({ ok: false, error: error?.message ?? String(error) }, 500);
+        return true;
       }
+      const sentMessages = quota.value;
+      recordSentMessagesV2(key, sentMessages);
+      markAiSpoke(st, now);
+      saveSocialV2State();
+      log(`[reserved2] 工具分条发送 ${key}: 成功 ${sentMessages.length}/${messages.length} 条`);
+      appendActivity(`${key} [reserved2] 工具分条发送：成功 ${sentMessages.length}/${messages.length} 条`);
+      if (sentMessages.length > 0) scheduleReplyCheckV2(key);
+      const burstHint = messages.length >= 3 ? '你已经连发了多条，确认是必要的吗？真人很少一口气补完。' : undefined;
+      const spaceWarn = findCjkSpaceWarning(messages);
+      const splitWarn = findSplitBoundaryWarning(messages);
+      sendJson({ ok: true, key, sent: sentMessages.length, failed: messages.length - sentMessages.length, ...(burstHint ? { hint: burstHint } : {}), ...(spaceWarn ? { warn: spaceWarn } : {}), ...(splitWarn ? { splitWarn } : {}) });
       return true;
     }
     return false;
@@ -367,7 +382,7 @@ export async function handleSend1(ctx) {
 /**
  * 覆盖 1 条路由，原 L2016–L2106
  */
-export async function handleSend2(ctx) {
+export async function handleSendRich(ctx) {
   const {
     appendActivity,
     capList,
@@ -535,44 +550,52 @@ export async function handleSend2(ctx) {
       }
       const sendCfg = cfg.socialV2?.send ?? {};
       const now = Date.now();
-      try {
-        const st = getSocialV2State(key);
-        if (!gateSendRate({ st, sendCfg, count: 1, now, key, log, sendJson, rateLimitCheck, hourCapFor })) return true;
-        st.sendTimes = reserveSlots(st.sendTimes, { count: 1, now });
-        const sent = await sendLibraryImage(key, name, { replyToMessageId: actualReplyToMessageId, atUserId });
-        const label = sent.image?.name || name;
-        const text = `[图片:${label}]`;
-        st.recentMessages.push({
-          messageId: sent.messageId ? String(sent.messageId) : null,
-          sender: '我',
-          text: text.slice(0, 200),
-          plain: text.slice(0, 200),
-          quoteTargetIsSelf: false,
-          isOwner: true,
-          ownerLabel: '我',
-          isSelf: true,
-          media: [],
-          hasMedia: false,
-          forwardIds: [],
-          hasForward: false,
-          libraryImage: { name: label, file: sent.image?.file || '' },
-          time: Date.now()
-        });
-        capList(st.recentMessages, recentLimitOf(cfg));
-        markAiSpoke(st, now);
-        resetPreSleepWait(st);
-        saveSocialV2State();
-        scheduleReplyCheckV2(key);
-        log(`[图库] 工具发送图片 ${key}: ${label}`);
-        appendActivity(`${key} [图库] 工具发送图片：${label}`);
-        sendJson({ ok: true, key, image: { name: label, file: sent.image?.file || '', verdict: sent.image?.verdict || '' }, sent: 1, failed: 0, quoted: quotedInfo });
-      } catch (error) {
-        const st = getSocialV2State(key);
-        st.sendTimes = rollbackSlots(st.sendTimes, { count: 1, now });
-        saveSocialV2State();
-        log(`[图库] 工具发送图片失败 ${key}: ${error?.message ?? error}`);
-        sendJson({ ok: false, error: `发送图片失败：${error?.message ?? error}` }, 500);
+      // 第 17 轮：预占/回滚收敛到 withSendQuota（原 catch 里重取 st、无条件回滚的那份写法）。
+      const st = getSocialV2State(key);
+      const quota = await withSendQuota({
+        st,
+        count: 1,
+        now,
+        reserveSlots,
+        rollbackSlots,
+        gate: () => gateSendRate({ st, sendCfg, count: 1, now, key, log, sendJson, rateLimitCheck, hourCapFor }),
+        run: () => sendLibraryImage(key, name, { replyToMessageId: actualReplyToMessageId, atUserId }),
+      });
+      if (quota.gateFailed) return true;
+      if (!quota.ok) {
+        if (quota.rolledBack) saveSocialV2State();
+        if (quota.rollbackError) log(`[图库] 回滚发送额度失败 (${key}):`, quota.rollbackError?.message ?? quota.rollbackError);
+        log(`[图库] 工具发送图片失败 ${key}: ${quota.error?.message ?? quota.error}`);
+        sendJson({ ok: false, error: `发送图片失败：${quota.error?.message ?? quota.error}` }, 500);
+        return true;
       }
+      const sent = quota.value;
+      const label = sent.image?.name || name;
+      const text = `[图片:${label}]`;
+      st.recentMessages.push({
+        messageId: sent.messageId ? String(sent.messageId) : null,
+        sender: '我',
+        text: text.slice(0, 200),
+        plain: text.slice(0, 200),
+        quoteTargetIsSelf: false,
+        isOwner: true,
+        ownerLabel: '我',
+        isSelf: true,
+        media: [],
+        hasMedia: false,
+        forwardIds: [],
+        hasForward: false,
+        libraryImage: { name: label, file: sent.image?.file || '' },
+        time: Date.now()
+      });
+      capList(st.recentMessages, recentLimitOf(cfg));
+      markAiSpoke(st, now);
+      resetPreSleepWait(st);
+      saveSocialV2State();
+      scheduleReplyCheckV2(key);
+      log(`[图库] 工具发送图片 ${key}: ${label}`);
+      appendActivity(`${key} [图库] 工具发送图片：${label}`);
+      sendJson({ ok: true, key, image: { name: label, file: sent.image?.file || '', verdict: sent.image?.verdict || '' }, sent: 1, failed: 0, quoted: quotedInfo });
       return true;
     }
     return false;
@@ -616,49 +639,54 @@ export async function handleSend2(ctx) {
       }
       const sendCfg = cfg.socialV2?.send ?? {};
       const now = Date.now();
-      try {
-        const st = getSocialV2State(key);
-        if (!gateSendRate({ st, sendCfg, count: 1, now, key, log, sendJson, rateLimitCheck, hourCapFor })) return true;
-        st.sendTimes = reserveSlots(st.sendTimes, { count: 1, now });
-        const sent = await sendStickerV2(key, stickerId, {
-          replyToMessageId: actualReplyToMessageId,
-          atUserId
-        });
-        // 记录到二代会话的 recentMessages，让 AI 知道自己发过这个表情
-        const label = sent.entry?.desc || sent.entry?.localNote || '表情包';
-        const text = `[表情包:${label}]`;
-        st.recentMessages.push({
-          messageId: sent.messageId ? String(sent.messageId) : null,
-          sender: '我',
-          text: text.slice(0, 200),
-          plain: text.slice(0, 200),
-          quoteTargetIsSelf: false,
-          isOwner: true,
-          ownerLabel: '我',
-          isSelf: true,
-          media: [],
-          hasMedia: false,
-          forwardIds: [],
-          hasForward: false,
-          sticker: { id: sent.entry?.id || stickerId, desc: sent.entry?.desc || '', localNote: sent.entry?.localNote || '' },
-          time: Date.now()
-        });
-        const recentLimit = recentLimitOf(cfg);
-        capList(st.recentMessages, recentLimit);
-        markAiSpoke(st, now);
-        resetPreSleepWait(st);
-        saveSocialV2State();
-        scheduleReplyCheckV2(key);
-        log(`[sticker] 工具发送表情 ${key}: ${sent.entry?.id || stickerId}`);
-        appendActivity(`${key} [sticker] 工具发送表情：${label}`);
-        sendJson({ ok: true, key, sticker: sent.entry, sent: 1, failed: 0, quoted: quotedInfo });
-      } catch (error) {
-        const st = getSocialV2State(key);
-        st.sendTimes = rollbackSlots(st.sendTimes, { count: 1, now });
-        saveSocialV2State();
-        log(`[sticker] 工具发送表情失败 ${key}: ${error?.message ?? error}`);
-        sendJson({ ok: false, error: `发送表情失败：${error?.message ?? error}` }, 500);
+      // 第 17 轮：预占/回滚收敛到 withSendQuota（原 catch 里重取 st、无条件回滚的那份写法）。
+      const st = getSocialV2State(key);
+      const quota = await withSendQuota({
+        st,
+        count: 1,
+        now,
+        reserveSlots,
+        rollbackSlots,
+        gate: () => gateSendRate({ st, sendCfg, count: 1, now, key, log, sendJson, rateLimitCheck, hourCapFor }),
+        run: () => sendStickerV2(key, stickerId, { replyToMessageId: actualReplyToMessageId, atUserId }),
+      });
+      if (quota.gateFailed) return true;
+      if (!quota.ok) {
+        if (quota.rolledBack) saveSocialV2State();
+        if (quota.rollbackError) log(`[sticker] 回滚发送额度失败 (${key}):`, quota.rollbackError?.message ?? quota.rollbackError);
+        log(`[sticker] 工具发送表情失败 ${key}: ${quota.error?.message ?? quota.error}`);
+        sendJson({ ok: false, error: `发送表情失败：${quota.error?.message ?? quota.error}` }, 500);
+        return true;
       }
+      const sent = quota.value;
+      // 记录到二代会话的 recentMessages，让 AI 知道自己发过这个表情
+      const label = sent.entry?.desc || sent.entry?.localNote || '表情包';
+      const text = `[表情包:${label}]`;
+      st.recentMessages.push({
+        messageId: sent.messageId ? String(sent.messageId) : null,
+        sender: '我',
+        text: text.slice(0, 200),
+        plain: text.slice(0, 200),
+        quoteTargetIsSelf: false,
+        isOwner: true,
+        ownerLabel: '我',
+        isSelf: true,
+        media: [],
+        hasMedia: false,
+        forwardIds: [],
+        hasForward: false,
+        sticker: { id: sent.entry?.id || stickerId, desc: sent.entry?.desc || '', localNote: sent.entry?.localNote || '' },
+        time: Date.now()
+      });
+      const recentLimit = recentLimitOf(cfg);
+      capList(st.recentMessages, recentLimit);
+      markAiSpoke(st, now);
+      resetPreSleepWait(st);
+      saveSocialV2State();
+      scheduleReplyCheckV2(key);
+      log(`[sticker] 工具发送表情 ${key}: ${sent.entry?.id || stickerId}`);
+      appendActivity(`${key} [sticker] 工具发送表情：${label}`);
+      sendJson({ ok: true, key, sticker: sent.entry, sent: 1, failed: 0, quoted: quotedInfo });
       return true;
     }
     return false;
@@ -668,7 +696,7 @@ export async function handleSend2(ctx) {
 /**
  * 覆盖 2 条路由，原 L2221–L2371
  */
-export async function handleSend3(ctx) {
+export async function handleSendCheckWait(ctx) {
   const {
     activeWaits,
     agentTokenOk,
@@ -855,7 +883,7 @@ export async function handleSend3(ctx) {
 /**
  * 覆盖 1 条路由，原 L2438–L2443
  */
-export async function handleSend4(ctx) {
+export async function handleSendRecordSentInternal(ctx) {
   const {
     req,
     sendJson,

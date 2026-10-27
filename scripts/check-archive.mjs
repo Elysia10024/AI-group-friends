@@ -21,13 +21,14 @@
 //   node scripts/check-archive.mjs
 import fs from 'node:fs';
 import path from 'node:path';
+import { aiqunyouPath } from './lib/paths.mjs';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
 const ARCHIVE_DIR = path.join(ROOT, 'docs', '会话归档');
 const TRANSCRIPT_DIR = path.join(ARCHIVE_DIR, 'transcripts');
 const HOMES = [
   path.join(process.env.USERPROFILE ?? '', '.dsh', 'sessions'),
-  '<项目根>/dsh-home-legacy/sessions'
+  aiqunyouPath('dsh-home-legacy/sessions')
 ];
 const MAX_GAP_DAYS = 7;
 

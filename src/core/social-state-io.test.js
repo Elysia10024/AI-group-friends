@@ -9,6 +9,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import {
   createSocialStateModule, PERSISTED_V2_FIELDS, RUNTIME_ONLY_V2_FIELDS, MEMORY_V2_FIELDS
 } from '../domains/social-state.js';
@@ -18,11 +21,17 @@ function makeModule(raw = '{}') {
   // written 必须**每个模块一份**：saveSocialV2State 现在会写两次（运行时状态 + 每会话记忆文件），
   // 而"往返稳定"那条会造两个模块 —— 共用同一个数组会被第二个模块清空，断言就假红。
   const written = [];
+  // 2026-10-27 第 1 期：读侧改走真 readStateFile（不再吃 ctx.readJsonSafe），
+  // 桩喂不进数据了——改成把 raw 写进真临时文件。顺带把这份测试从"纯内存桩"
+  // 升级成真过一遍磁盘的 IO 测试（审计第 10 条：最贵的数据以前真 IO 一次没测）。
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-sstate-'));
+  const stateFile = path.join(dir, 'social-v2.json');
+  fs.writeFileSync(stateFile, raw, 'utf8');
   const socialV2 = { paused: false, conversations: new Map() };
   const seenForwardIds = new Map();
   const mod = createSocialStateModule({
     KNOWN_AGENT_TOKENS: new Set(),
-    SOCIAL_V2_FILE: '/dev/null',
+    SOCIAL_V2_FILE: stateFile,
     appendMemory: () => {}, atomicWriteJson: (p, o) => written.push(o),
     canonicalV2Key: (k) => (/^(group|private):\d+$/.test(String(k)) ? String(k) : null),
     cfg: { socialV2: {} },

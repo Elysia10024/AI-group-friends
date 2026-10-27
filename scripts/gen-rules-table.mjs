@@ -5,8 +5,9 @@
 // 让人在动手前就能看到影响面。跑法： npm run rules:table
 import fs from 'node:fs';
 import path from 'node:path';
+import { PROJECT_ROOT } from './lib/paths.mjs';
 
-const ROOT = '<项目根>';
+const ROOT = PROJECT_ROOT;
 const OUT = path.join(ROOT, 'docs/规则总表.md');
 const read = (p) => (fs.existsSync(p) ? fs.readFileSync(p, 'utf8') : '');
 

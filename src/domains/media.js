@@ -440,7 +440,7 @@ export function createMediaModule(ctx) {
 
   function mediaHintFor(key, messageRef, mediaList) {
     if (!Array.isArray(mediaList) || mediaList.length === 0 || !messageRef) return '';
-    if (ctx.currentMode === 'reserved2') {
+    if (ctx.flags.currentMode === 'reserved2') {
       return `\n【图片/表情】本条消息包含 ${mediaList.length} 个图片/表情（消息ID=${messageRef}）。如需要查看/识别，请调用 mcp__snowluma__qq_get_message_images，参数 key="${key}", messageId="${messageRef}"。`;
     }
     return `\n【图片/表情】本条消息包含 ${mediaList.length} 个图片/表情（消息ID=${messageRef}）。`;
@@ -450,7 +450,7 @@ export function createMediaModule(ctx) {
     const refStr = String(ref ?? '').trim();
     if (!refStr) return [];
     // 二代：消息对象上直接带 media（仅在确实存在二代会话状态时读取，避免为 gen1 创建影子状态）
-    if (ctx.currentMode === 'reserved2' || ctx.socialV2.conversations.has(key)) {
+    if (ctx.flags.currentMode === 'reserved2' || ctx.socialV2.conversations.has(key)) {
       try {
         const st = getSocialV2State(key);
         if (st && Array.isArray(st.recentMessages)) {

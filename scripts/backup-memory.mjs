@@ -1,7 +1,7 @@
 // 记忆快照：她的记忆（群友印象/话题/想法）只存在 state/social-v2.json 里，
 // 而这份文件是被 gitignore 的 —— 一旦被误删就真的没了。
 // 2026-09-20 我就误清过一次，全靠"影子组装记录里当时渲染出来的记忆块"才捞回来。
-// 这个脚本把两个会话的记忆导出成带时间戳的快照，保留最近 24 份。
+// 这个脚本把两个会话的记忆导出成带时间戳的快照，保留最近 40 份（与 memory.js 破坏性写入前的快照统一，2026-10-28 审计第 13 条）。
 //
 // 用法：npm run backup:memory
 import fs from 'node:fs';
@@ -11,7 +11,7 @@ import { fileURLToPath } from 'node:url';
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, '..');
 const BACKUP_DIR = path.join(ROOT, 'state', 'backups');
-const KEEP = 24;
+const KEEP = 40;   // 与 memory.js 的 40 份对齐：同一个 state/backups 目录，绝不能两套 retention 互相裁
 
 const token = fs.readFileSync(path.join(ROOT, 'state', 'console-token'), 'utf8').trim();
 const BASE = 'http://127.0.0.1:3100';

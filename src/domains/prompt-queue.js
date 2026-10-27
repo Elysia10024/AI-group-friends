@@ -37,8 +37,8 @@ export function createPromptQueueModule(ctx) {
     setTimeout(() => { flushQueue(); }, 3000);
   };
   const flushQueue = async () => {
-    if (ctx.flushingQueue) return;
-    ctx.flushingQueue = true;
+    if (ctx.flags.flushingQueue) return;
+    ctx.flags.flushingQueue = true;
     try {
       const entries = [...queued.entries()];
       queued.clear();
@@ -50,8 +50,8 @@ export function createPromptQueueModule(ctx) {
           try {
             const [kind, idStr] = key.split(':');
             const id = Number(idStr);
-            if (!ctx.modeAllowed(key, kind, id, cfg, ctx.currentMode)) {
-              log(`补投跳过未授权会话 ${key}（当前模式 ${ctx.currentMode}）`);
+            if (!ctx.modeAllowed(key, kind, id, cfg, ctx.flags.currentMode)) {
+              log(`补投跳过未授权会话 ${key}（当前模式 ${ctx.flags.currentMode}）`);
               continue;
             }
             const result = await ctx.deliverPrompt(key, item.promptText, { farewell: item.farewell, silent: item.silent, media: item.media ?? [] });
@@ -92,7 +92,7 @@ export function createPromptQueueModule(ctx) {
         }
       }
     } finally {
-      ctx.flushingQueue = false;
+      ctx.flags.flushingQueue = false;
     }
   };
 

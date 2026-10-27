@@ -42,6 +42,8 @@ import {
 } from '../core/qzone.js';
 import { qzoneKeys, parseQzoneJsonp, mapMoodDetail, formatMoodDetail, formatQzoneFeeds } from '../core/qzone-cgi.js';
 
+import { createOneBotClient } from '../core/onebot.js';
+
 export function createQzoneModule(ctx) {
   const { cfg, log } = ctx;
   const stateDir = String(ctx.stateDir || path.join(ctx.ROOT, 'state'));
@@ -81,23 +83,10 @@ export function createQzoneModule(ctx) {
     cache = { mtimeMs, state: next };
   }
 
+  // 第 5 期 5b：OneBot 请求实现统一在 core/onebot.js，这里只保留域差异参数（超时/426 措辞）。
+  const onebot = createOneBotClient({ cfg });
   async function postOneBot(action, params, timeoutMs = 30000) {
-    const httpUrl = String(cfg.snowluma?.httpUrl || 'http://127.0.0.1:3000').replace(/\/+$/, '');
-    const res = await fetch(`${httpUrl}/${action}`, {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        ...(cfg.snowluma?.accessToken ? { authorization: `Bearer ${cfg.snowluma.accessToken}` } : {})
-      },
-      body: JSON.stringify(params),
-      signal: AbortSignal.timeout(timeoutMs)
-    });
-    const body = await res.json().catch(() => ({}));
-    if (!res.ok || body.status !== 'ok' || body.retcode !== 0) {
-      const hint = res.status === 426 ? '（HTTP 426：snowluma.httpUrl 可能指到了 WebSocket 端口）' : '';
-      throw new Error(`OneBot ${action} 失败: ${body.wording || body.retcode || res.status}${hint}`);
-    }
-    return body.data;
+    return onebot.call(action, params, { timeoutMs, hint426: 'short' });
   }
 
   function enabled() {

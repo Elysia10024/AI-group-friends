@@ -2,9 +2,10 @@
 // 为什么用 Node 而不是 Python：node 的 stdout 是 UTF-8（干净），
 // Python 的 stdout 是 GBK，回传到 harness 会变成乱码。
 import fs from 'node:fs';
+import { projectPath } from './lib/paths.mjs';
 
-const SRC = '<项目根>/config.json';
-const DST = '<项目根>/config.example.json';
+const SRC = projectPath('config.json');
+const DST = projectPath('config.example.json');
 const SECRET_RE = /token|secret|password|apikey|api_key|cookie/i;
 const PLACEHOLDER = '<在这里填你自己的值>';
 
@@ -24,6 +25,34 @@ function scrub(value, keyPath) {
 
 const raw = fs.readFileSync(SRC, 'utf8');
 const clean = scrub(JSON.parse(raw), '');
+
+// --check 模式：只比对模板与实配的叶子键集是否一致，不写文件（接进 selfcheck，2026-10-27 第 1 期）。
+// 起因：example 曾落后实配 19 天、缺 29 个键，且 proactive.enabled 与实配反向——
+// 复制模板起服务等于默认替人打开每轮花钱的主动冒泡。
+function leafKeys(o, p = '') {
+  const out = [];
+  for (const [k, v] of Object.entries(o)) {
+    const kp = p ? p + '.' + k : k;
+    if (v && typeof v === 'object' && !Array.isArray(v)) out.push(...leafKeys(v, kp));
+    else out.push(kp);
+  }
+  return out;
+}
+if (process.argv.includes('--check')) {
+  const existing = JSON.parse(fs.readFileSync(DST, 'utf8'));
+  const want = leafKeys(clean).sort();
+  const have = leafKeys(existing).filter((k) => k !== '_comment').sort();
+  const missing = want.filter((k) => !have.includes(k));
+  const extra = have.filter((k) => !want.includes(k));
+  if (missing.length || extra.length) {
+    console.error('❌ config.example.json 与 config.json 键集不一致（跑 node scripts/make-config-example.mjs 重新生成）');
+    if (missing.length) console.error('   模板缺: ' + missing.join(', '));
+    if (extra.length) console.error('   模板多: ' + extra.join(', '));
+    process.exit(1);
+  }
+  console.log('✅ check:config-example 键集一致（' + want.length + ' 个叶子键）');
+  process.exit(0);
+}
 
 const header = {
   _comment: [

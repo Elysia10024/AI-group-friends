@@ -12,8 +12,7 @@
 // - 所有文本只做展示/提示，不执行任何本地操作。
 
 import fs from 'node:fs';
-import path from 'node:path';
-import crypto from 'node:crypto';
+import { atomicWriteJson } from './core/state-io.js';
 
 export function nowIso() {
   return new Date().toISOString();
@@ -57,10 +56,7 @@ export function loadStickerStore(file) {
 }
 
 export function saveStickerStore(file, entries) {
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  const tmp = `${file}.${process.pid}.${crypto.randomBytes(6).toString('hex')}.tmp`;
-  fs.writeFileSync(tmp, JSON.stringify(entries, null, 2), { encoding: 'utf8', mode: 0o600 });
-  fs.renameSync(tmp, file);
+  atomicWriteJson(file, entries);
 }
 
 // 把 SnowLuma 返回的 QQ 收藏表情详情合并进本地库。

@@ -8,6 +8,7 @@
 // base64 是各实现都认的通用做法（我们的图规范化后 ≤240KB，base64 约 320KB，没问题）。
 import fs from 'node:fs';
 import path from 'node:path';
+import { atomicWriteJson, atomicWriteText } from '../core/state-io.js';
 import { parseImageLibrary, findImage, filterImages, imageIndexText, isSendable, safeImageFile, pickImageExt, extFromBuffer, buildLibraryEntry, appendImageEntry } from '../core/image-library.js';
 
 const MIME_BY_EXT = { '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png', '.webp': 'image/webp', '.gif': 'image/gif' };
@@ -17,6 +18,8 @@ const MIME_BY_EXT = { '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'imag
  * 之前存图 6MB、发图 4MB —— 4~6MB 那段会出现"存得下、发不出去"的图，那对她来说就是垃圾。
  */
 const MAX_IMAGE_BYTES = 6 * 1024 * 1024;
+
+import { createOneBotClient } from '../core/onebot.js';
 
 export function createImageLibraryModule(ctx) {
   const {
@@ -82,23 +85,10 @@ export function createImageLibraryModule(ctx) {
     return imageIndexText(loadLibrary().images);
   }
 
+  // 第 5 期 5b：统一实现；存图走 get_image，超时 20s、短版 426 提示（逐字保留）。
+  const onebot = createOneBotClient({ cfg });
   async function postOneBot(action, params) {
-    const httpUrl = String(cfg.snowluma?.httpUrl || 'http://127.0.0.1:3000').replace(/\/+$/, '');
-    const res = await fetch(`${httpUrl}/${action}`, {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        ...(cfg.snowluma?.accessToken ? { authorization: `Bearer ${cfg.snowluma.accessToken}` } : {})
-      },
-      body: JSON.stringify(params),
-      signal: AbortSignal.timeout(20000)
-    });
-    const body = await res.json().catch(() => ({}));
-    if (!res.ok || body.status !== 'ok' || body.retcode !== 0) {
-      const hint = res.status === 426 ? '（HTTP 426：snowluma.httpUrl 可能指到了 WebSocket 端口）' : '';
-      throw new Error(`OneBot ${action} 失败: ${body.wording || body.retcode || res.status}${hint}`);
-    }
-    return body.data;
+    return onebot.call(action, params, { timeoutMs: 20000, hint426: 'short' });
   }
 
   /**
@@ -219,10 +209,8 @@ export function createImageLibraryModule(ctx) {
     fs.mkdirSync(readyDir(), { recursive: true });
     const target = path.join(readyDir(), built.entry.file);
     if (fs.existsSync(target)) throw new Error(`ready/ 里已经有同名文件「${built.entry.file}」`);
-    fs.writeFileSync(`${target}.tmp`, buffer);
-    fs.renameSync(`${target}.tmp`, target);
-    fs.writeFileSync(`${libraryFile()}.tmp`, JSON.stringify(appended.raw, null, 2), 'utf8');
-    fs.renameSync(`${libraryFile()}.tmp`, libraryFile());
+    atomicWriteText(target, buffer);   // 数据是 Buffer：writeFileSync 对 Buffer 忽略 encoding，按二进制原样落盘
+    atomicWriteJson(libraryFile(), appended.raw);
     cache = null;   // 立刻生效（同一毫秒内 mtime 可能不变，别等下一轮）
     log?.(`[图库] 存了群友的图「${built.entry.name}」（${Math.round(buffer.length / 1024)}KB｜${built.entry.tags.join('/')}）`);
     return { entry: built.entry, bytes: buffer.length };

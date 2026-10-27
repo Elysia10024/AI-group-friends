@@ -36,7 +36,7 @@ function harness() {
     return states.get(key);
   };
   const mod = createAdminCommandsModule({
-    ROOT: process.cwd(),
+    ROOT: '<项目根>\\qq-bridge-main',
     ctx: { sessionEpoch: 0 },
     fs: { existsSync: () => false },
     path,

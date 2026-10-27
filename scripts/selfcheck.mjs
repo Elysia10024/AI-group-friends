@@ -6,20 +6,26 @@
 // 退出码：0 全绿；1 有红的（watchdog 会把它写进日志，并在有异常时提醒管理员）。
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
+import { PROJECT_ROOT, aiqunyouPath } from './lib/paths.mjs';
 
-const ROOT = '<项目根>';
+const ROOT = PROJECT_ROOT;
 const QUICK = process.argv.includes('--quick');
 const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
 
 const STEPS = [
   ...(QUICK ? [] : [['测试', [npm, 'test']]]),
   ['规则层', ['node', 'scripts/check-rules.mjs']],
+  ['原子写', ['node', 'scripts/check-atomic-write.mjs']],
+  ['配置模板', ['node', 'scripts/make-config-example.mjs', '--check']],
+  ['脚本索引', ['node', 'scripts/gen-script-index.mjs', '--check']],
+  ['路由表', ['node', 'scripts/gen-route-index.mjs', '--check']],
   ['幽灵工具引用', ['node', 'scripts/check-tool-refs.mjs']],
   ['模块 ctx', ['node', 'scripts/check-module-ctx.mjs']],
   // 控制台路由的 ctx 接线（静态）：路由从 ctx 解构、而 bridge 的 startConsoleServer 没传，
   // 症状是那几条路由 500 —— 2026-09 发送通道整体坏掉就是这么坏的，而 check:mcp-tools /
   // check:tool-token 都验不到它（它们验的是工具发的请求，不是路由手里的名字）。
   ['控制台 ctx 接线', ['node', 'scripts/console-ctx-audit.mjs']],
+  ['路由清单', ['node', 'scripts/check-route-inventory.mjs']],
   ['前端金标准', ['node', 'scripts/check-console-ui.mjs']],
   ['工具开关', ['node', 'scripts/check-tool-flags.mjs']],
   // 工具令牌接线：2026-10-06 语音工具把 token 只放进了 body，而 /api/socialV2/* 看的是
@@ -40,7 +46,7 @@ const STEPS = [
   // 会话归档新鲜度：归档是"给压缩后的我用的记忆"，落后于现实就会误导人 —— 比没有归档更糟。
   // 判据：最新会话活动 vs 最后归档日期（差 >7 天就红）。自检钩子见脚本头（ARCHIVE_FAKE_SESSION_DAY）。
   ['会话归档新鲜度', ['node', 'scripts/check-archive.mjs']],
-  // 档案新鲜度：`docs/小鲸鱼档案.md` 的「现状速览」是**生成块**（tools/bridge-facts.mjs），
+  // 档案新鲜度：`<DS目录>\docs\小鲸鱼档案.md` 的「现状速览」是**生成块**（tools/bridge-facts.mjs），
   // 但生成块不会自己变新 —— 忘了 --write 它就悄悄过期（那份档案已经烂过 27 天，还写着"傲娇"）。
   // 工具不在时这条**报红而不是跳过**：本仓有过"守卫指向的路径悄悄失效、连续 12 天报绿"的教训。
   ['档案新鲜度', ['node', 'scripts/check-dossier.mjs']],
@@ -93,7 +99,7 @@ console.log(bad ? `\n❌ ${bad} 项没过 —— 去看上面的明细。` : '\n
 
 // 留一份滚动日志（watchdog 用它判断"今天体检过没有"）
 try {
-  fs.appendFileSync('<项目根>/logs/selfcheck.log', `${head}\n${rows.map((r) => `  ${r.ok ? 'OK  ' : 'FAIL'} ${r.name}: ${r.line}`).join('\n')}\n\n`, 'utf8');
+  fs.appendFileSync(aiqunyouPath('logs/selfcheck.log'), `${head}\n${rows.map((r) => `  ${r.ok ? 'OK  ' : 'FAIL'} ${r.name}: ${r.line}`).join('\n')}\n\n`, 'utf8');
 } catch { /* 日志写不了不影响结论 */ }
 
 process.exit(bad ? 1 : 0);

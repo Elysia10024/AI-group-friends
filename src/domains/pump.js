@@ -15,6 +15,7 @@ import { createAlertGate, alertText, recoveredText, ALERT_DEFAULT_REPEAT_MS } fr
 export function createPumpModule(ctx) {
   const {
     KNOWN_AGENT_TOKENS,
+    registry,
     SENSITIVE_RE,
     SILENT_MARKER,
     SILENT_TURN_TIMEOUT_MS,
@@ -36,7 +37,6 @@ export function createPumpModule(ctx) {
     isSendToolName,
     isSilentMarker,
     isSleepingConfigV2,
-    isSocialEnabled,
     learnerCollectors,
     learnerSessions,
     learnerWaiters,
@@ -45,7 +45,6 @@ export function createPumpModule(ctx) {
     mdToPlain,
     pendingSendToolCalls,
     pendingWakeKeys,
-    planSocialTimeline,
     preSleepWaitBlockedV2,
     recordShadowAssembly,
     registerPending,
@@ -53,7 +52,6 @@ export function createPumpModule(ctx) {
     sanitizeToolArgs,
     saveSocialV2State,
     scheduleWakeV2,
-    sendBurstToQQ,
     sendToQQ,
     sendToolSucceededSessions,
     settleV2ReadState,
@@ -175,23 +173,29 @@ export function createPumpModule(ctx) {
         // 【关键】清理必须放在 finally。DSH 关闭连接时，for await 会"正常结束"而不抛异常，
         // 只写在 catch 里会导致清理永远不执行 → v2TurnStartAt / promptQueues / pendingWakeKeys
         // 残留 → isConversationBusyV2 永久返回 true → 重启 DSH 后所有 @/戳一戳只被暂存、永不投递。
-        collectors.clear(); // 清除旧 turn collector，避免重连后残留导致重复累加
-        social.silentTurns.clear(); // 清除未消费的摘要静默名额，避免重连后吞掉正常回复
-        sendToolSucceededSessions.clear();
-        pendingSendToolCalls.clear();
-        v2TurnStartAt.clear();
-        toolCallNames.clear();
-        pendingWakeKeys.clear();
+        // 整表清走登记处（第 2 期）：session 组 = 以 sessionId 为键的 7 个 store；
+        // 4 个 conv Set 与 wipeConversation 的名单同源，不再各抄一份。
+        registry.clearSessions(); // collectors / silentTurns / exitingSessions / sendToolSucceededSessions / pendingSendToolCalls / v2TurnStartAt / toolCallNames
+        registry.clearStores(['pendingWakeKeys', 'wakeConfigUpdatedKeys', 'markReadCalledKeys', 'wakeConfigMissCount']);
         clearAllPendingWakeLeases();
-        social.exitingSessions.clear();
-        wakeConfigUpdatedKeys.clear();
-        markReadCalledKeys.clear();
-        wakeConfigMissCount.clear();
         // promptQueues 里可能留着 running=true 的僵尸条目（正在投递时 DSH 被杀，
         // promise 永不 resolve，finally 永不执行），一并清掉。
         try { drainAllPromptQueues('DSH 事件流中断，已清空投递队列'); } catch { /* DSH 事件流断开时清空投递队列：清不动也不能影响重连 */ }
       }
       await sleep(3000);
+    }
+  }
+
+  // 退场复位（第 5 期 5a）：原来 handleTurnEnd 里有 8 份逐字相同的
+  // 「if (isFarewell) { const st = socialState(key); if (st.phase === 'exiting') { 三行复位 } }」，
+  // 差异只有日志短语。收成一个函数：以后给退场状态加字段只改这一处。
+  function exitToIdle(key, label) {
+    const st = socialState(key);
+    if (st.phase === 'exiting') {
+      st.phase = 'idle';
+      st.activeDeadlineAt = 0;
+      st.activeExitAt = 0;
+      log(`社交模式：${key} ${label}，回到观望`);
     }
   }
 
@@ -205,7 +209,7 @@ export function createPumpModule(ctx) {
               // 水位线、lastActionAt、noActionCount、confirmedBy、"本回合已收尾"这些桥侧全知道。
               // 沉睡前观察窗口内只推进水位线、不确认唤醒配置（否则等于绕过观察窗口），
               // 那种情况交给下面的 remindWakeConfigIfMissing 去提醒她补一次观察。
-              if (ctx.currentMode === 'reserved2' && key) {
+              if (ctx.flags.currentMode === 'reserved2' && key) {
                 const st = getSocialV2State(key);
                 const allowSleepConfirm = !(isSleepingConfigV2(st.wakeConfig) && preSleepWaitBlockedV2(st));
                 const { markedCount } = settleV2ReadState(st, { key, sleepConfirm: allowSleepConfirm });
@@ -242,13 +246,7 @@ export function createPumpModule(ctx) {
                 if (!plain.trim()) {
                   log(`agent 回复为空（仅格式/空白）(${key})`);
                   if (isFarewell) {
-                    const st = socialState(key);
-                    if (st.phase === 'exiting') {
-                      st.phase = 'idle';
-                      st.activeDeadlineAt = 0;
-                      st.activeExitAt = 0;
-                      log(`社交模式：${key} 空退场回合，回到观望`);
-                    }
+                    exitToIdle(key, '空退场回合');
                   }
                   return true;
                 }
@@ -256,13 +254,7 @@ export function createPumpModule(ctx) {
                 if (isSilentMarker(plain)) {
                   log(`社交模式：AI 选择静默（${SILENT_MARKER}）(${key})`);
                   if (isFarewell) {
-                    const st = socialState(key);
-                    if (st.phase === 'exiting') {
-                      st.phase = 'idle';
-                      st.activeDeadlineAt = 0;
-                      st.activeExitAt = 0;
-                      log(`社交模式：${key} 退场选择静默，回到观望`);
-                    }
+                    exitToIdle(key, '退场选择静默');
                   }
                   return true;
                 }
@@ -270,13 +262,7 @@ export function createPumpModule(ctx) {
                 if (sendToolSucceeded) {
                   log(`工具已发送消息，跳过自动转发 (${key})`);
                   if (isFarewell) {
-                    const st = socialState(key);
-                    if (st.phase === 'exiting') {
-                      st.phase = 'idle';
-                      st.activeDeadlineAt = 0;
-                      st.activeExitAt = 0;
-                      log(`社交模式：${key} 工具发送后退场完成，回到观望`);
-                    }
+                    exitToIdle(key, '工具发送后退场完成');
                   }
                   return true;
                 }
@@ -289,13 +275,7 @@ export function createPumpModule(ctx) {
                     await notifyOwnerQuietly(key, '⚠️ 她的本条回复因疑似包含敏感信息（路径/凭据/会话令牌）被安全策略拦截，已记录并通知管理员。');
                   }
                   if (isFarewell) {
-                    const st = socialState(key);
-                    if (st.phase === 'exiting') {
-                      st.phase = 'idle';
-                      st.activeDeadlineAt = 0;
-                      st.activeExitAt = 0;
-                      log(`社交模式：${key} 退场发言被拦截，回到观望`);
-                    }
+                    exitToIdle(key, '退场发言被拦截');
                   }
                   return true;
                 }
@@ -331,26 +311,14 @@ export function createPumpModule(ctx) {
                   }
                 }
                 if (isFarewell) {
-                  const st = socialState(key);
-                  if (st.phase === 'exiting') {
-                    st.phase = 'idle';
-                    st.activeDeadlineAt = 0;
-                    st.activeExitAt = 0;
-                    log(`社交模式：${key} 退场发言出错，回到观望`);
-                  }
+                  exitToIdle(key, '退场发言出错');
                 }
               } else if (ended.reason.kind === 'aborted') {
                 log(`回合被中止 (${key})`);
                 appendActivity(`${key} 回合被中止`);
                 await notifyOwnerQuietly(key, `⏹️ 已停止（${key}）`);
                 if (isFarewell) {
-                  const st = socialState(key);
-                  if (st.phase === 'exiting') {
-                    st.phase = 'idle';
-                    st.activeDeadlineAt = 0;
-                    st.activeExitAt = 0;
-                    log(`社交模式：${key} 退场发言中止，回到观望`);
-                  }
+                  exitToIdle(key, '退场发言中止');
                 }
               } else if (!ended.text.trim()) {
                 handleCompletedWithoutText(isFarewell, key);
@@ -380,7 +348,7 @@ export function createPumpModule(ctx) {
               // 则累计 noActionCount；达到阈值后自动重置 WakeConfig，避免 AI 卡死。
               const silentQueueNow = social.silentTurns.get(frame.sessionId) ?? [];
               const isSilentTurn = silentQueueNow.length > 0;
-              if (ctx.currentMode === 'reserved2' && key && !isSilentTurn) {
+              if (ctx.flags.currentMode === 'reserved2' && key && !isSilentTurn) {
                 const st = getSocialV2State(key);
                 const turnStart = v2TurnStartAt.get(frame.sessionId) ?? 0;
                 const actionTaken = sendToolSucceededSessions.has(frame.sessionId) || (turnStart > 0 && st.lastActionAt >= turnStart);
@@ -465,59 +433,15 @@ export function createPumpModule(ctx) {
                 // completed 但没文本（纯工具调用回合）
                 log(`回合完成但无文本 (${key})`);
                 if (isFarewell) {
-                  const st = socialState(key);
-                  if (st.phase === 'exiting') {
-                    st.phase = 'idle';
-                    st.activeDeadlineAt = 0;
-                    st.activeExitAt = 0;
-                    log(`社交模式：${key} 退场回合无文本，回到观望`);
-                  }
+                  exitToIdle(key, '退场回合无文本');
                 }
   }
 
   async function sendSocialTimelineReply(isFarewell, key, plain) {
                 // 仿真群友模式：时间线多段发送（主回复 + 可选二次补刀）
-                if (isSocialEnabled()) {
-                  if (shouldBlockSilentReply(key)) {
-                    log(`静默模式，拦截在途回复 (${key})`);
-                    appendActivity(`${key} 静默模式，拦截在途回复`);
-                    if (isFarewell) {
-                      const st = socialState(key);
-                      if (st.phase === 'exiting') {
-                        st.phase = 'idle';
-                        st.activeDeadlineAt = 0;
-                        st.activeExitAt = 0;
-                        log(`社交模式：${key} 静默模式下退场回合被拦截，回到观望`);
-                      }
-                    }
-                    return true;
-                  }
-                  const timeline = planSocialTimeline(plain, cfg.social);
-                  const messages = timeline.main;
-                  log(`agent 回复 (${key}) ${plain.length} 字 → ${messages.length} 条`);
-                  appendActivity(`${key} agent 回复：${messages[0].slice(0, 80)}${messages.length > 1 ? '（分' + messages.length + '条）' : ''}${messages[0].length > 80 ? '…' : ''}`);
-                  if (messages.length > 1) {
-                    await sendBurstToQQ(key, messages, cfg.social);
-                  } else {
-                    await sendToQQ(key, messages[0]);
-                  }
-                  // 发言后刷新活跃时间，并调度可能的二次补刀
-                  const st = socialState(key);
-                  if (isFarewell) {
-                    // 确认为退场发言：不再刷新活跃时间、不调度补刀，直接进入观望
-                    st.phase = 'idle';
-                    st.activeDeadlineAt = 0;
-                    st.activeExitAt = 0;
-                    log(`社交模式：${key} 退场发言完成，进入观望`);
-                  } else if (st.phase === 'exiting') {
-                    // 退场期间有旧回复恰好完成：照常发出，但不把它当作退场，也不调度补刀
-                    log(`社交模式：${key} 退场期间旧回复完成，保持退场状态`);
-                  } else {
-                    st.lastActiveMessageAt = Date.now();
-                    st.lastAiReplyAt = Date.now();
-                    log(`社交模式：发言完成，刷新活跃时间 (${key})`);
-                  }
-                } else if (ctx.currentMode === 'reserved2') {
+                // 第 5 期 5c：一代社交（isSocialEnabled 恒 false）的整块时间线发送已删；
+                // 原「无条件退场复位」第 9 份副本随死代码消失，退场复位同步点只剩 exitToIdle 一处。
+                if (ctx.flags.currentMode === 'reserved2') {
                   log(`[reserved2] AI 内部输出（不自动转发）(${key}): ${plain.slice(0, 80)}`);
                   appendActivity(`${key} [reserved2] AI 内部输出：${plain.slice(0, 80)}${plain.length > 80 ? '…' : ''}`);
                 } else {

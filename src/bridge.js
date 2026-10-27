@@ -31,6 +31,7 @@ import {
   findCjkSpaceWarning, findSplitBoundaryWarning
 } from './core/text.js';
 import { buildWakePrompt } from './core/prompt.js';
+import { createConversationRegistry } from './core/conversation-registry.js';
 import { formatMemory, appendMemory } from './core/memory.js';
 import {
   wakePolicy, mentionsOnly, allowedKeywordsRaw, allowedKeywords,
@@ -120,6 +121,7 @@ const runtimeMod = createRuntimeModule({
   STATE_DIR,
   STATE_FILE,
   appendCappedLine,
+  atomicWriteJson,
   atomicWriteText,
   crypto,
   fs,
@@ -227,6 +229,14 @@ const REJECT_WORDS = new Set(['拒绝', '不同意', '不允许', '驳回', 'no'
 
 // ── 主流程 ──────────────────────────────────────────────────────────────────
 async function main() {
+  // 可变标量状态（第 3 期 3b）：原来是 11 个 let + 72 行 getter/setter 注入，现在一个共享对象。
+  // 模块拿 flags 引用、读写走字段——没有访问器对、没有 TDZ 包装、没有解构快照过期。
+  const flags = {
+    currentMode: 'reserved2', lastMode: 'reserved2', closedAgentPreset: 'router-standard',
+    dshReady: false, dshCheckStarted: false, flushingQueue: false,
+    sessionEpoch: 0, stickerSyncedAt: 0, lastForcedAgentStickerSync: 0,
+    slangEntries: [], stickerEntries: [],
+  };
   const cfg = loadConfig();
   fs.mkdirSync(STATE_DIR, { recursive: true });
   acquireLock();
@@ -238,7 +248,7 @@ async function main() {
   loadState();
 
   // ── 群聊黑话/网络用语学习（slang） ──────────────────────────────────────
-  let slangEntries = loadSlang(SLANG_FILE);
+  flags.slangEntries = loadSlang(SLANG_FILE);
   // 表达方式库（「什么场景 → 怎么说」）：手动学习、审核后注入材料。和黑话分开存。
   let expressions = (() => {
     try {
@@ -258,9 +268,9 @@ async function main() {
   let slangTaskChain = Promise.resolve();
 
   // ── 表情包体系（二代仿真）本地知识库 ────────────────────────────────────
-  let stickerEntries = loadStickerStore(STICKER_FILE);
-  let stickerSyncedAt = 0; // 上次从 SnowLuma 拉取收藏表情的时间戳（毫秒）
-  let lastForcedAgentStickerSync = 0; // AI 强制刷新表情库的最小间隔保护
+  flags.stickerEntries = loadStickerStore(STICKER_FILE);
+  flags.stickerSyncedAt = 0; // 上次从 SnowLuma 拉取收藏表情的时间戳（毫秒）
+  flags.lastForcedAgentStickerSync = 0; // AI 强制刷新表情库的最小间隔保护
   // 本地图库（<项目根>\image）：管理员自己命名的梗图，按语境发。
   // 与表情包模块并列，但真相源是本地文件夹 + library.json（改完下一轮生效，不用重启）。
   const imageLibraryMod = createImageLibraryModule({
@@ -275,7 +285,7 @@ async function main() {
     getSocialV2State: (...a) => getSocialV2State(...a),
     // 存群友的图时走 get_image（QQ 网关，比 URL 可靠）。bot 也是后面才连上的，同样用 getter。
     get bot() { return bot; },
-    safeFetchBuffer: (...a) => safeFetchBuffer(...a),
+    safeFetchBuffer,
     get randInt() { return randInt; },
     get sendChain() { return sendChain; },
     set sendChain(v) { sendChain = v; },
@@ -304,10 +314,7 @@ async function main() {
     get randInt() { return randInt; },
     get sendChain() { return sendChain; },
     set sendChain(v) { sendChain = v; },
-    get stickerEntries() { return stickerEntries; },
-    set stickerEntries(v) { stickerEntries = v; },
-    get stickerSyncedAt() { return stickerSyncedAt; },
-    set stickerSyncedAt(v) { stickerSyncedAt = v; },
+    flags,
   });
   const {
     stickerEnabled,
@@ -383,10 +390,7 @@ async function main() {
     unwrap,
     upsertSlangEntry,
     get api() { return api; },
-    get dshReady() { return dshReady; },
-    set dshReady(v) { dshReady = v; },
-    get slangEntries() { return slangEntries; },
-    set slangEntries(v) { slangEntries = v; },
+    flags,
     get slangLearnerSessionId() { return slangLearnerSessionId; },
     set slangLearnerSessionId(v) { slangLearnerSessionId = v; },
     get slangTaskChain() { return slangTaskChain; },
@@ -451,12 +455,12 @@ async function main() {
 
   // DSH 可用性探活 + 重启容错队列：
   // DSH 重启期间收到的 QQ 消息先入队（不丢），DSH 恢复后按序补投。
-  let dshReady = false;
-  let dshCheckStarted = false;
+  flags.dshReady = false;
+  flags.dshCheckStarted = false;
   // 默认模式 = reserved2（一代 chat/reserved 已删除）。真正生效的模式由 DSH settings / state/mode.json 决定。
-  let currentMode = 'reserved2'; // closed-agent | reserved2
-  let lastMode = currentMode;
-  let closedAgentPreset = 'router-standard'; // closed-agent 模式使用的 DSH agent preset
+  flags.currentMode = 'reserved2'; // closed-agent | reserved2
+  flags.lastMode = flags.currentMode;
+  flags.closedAgentPreset = 'router-standard'; // closed-agent 模式使用的 DSH agent preset
   const queued = new Map(); // key -> { promptText }[]
   const queuedHintAt = new Map(); // key -> timestamp（冷却提示）
   const QUEUE_MAX = 50;
@@ -468,11 +472,8 @@ async function main() {
     log,
     queueRetries,
     queued,
-    get currentMode() { return currentMode; },
-    set currentMode(v) { currentMode = v; },
+    flags,
     get deliverPrompt() { return deliverPrompt; },
-    get flushingQueue() { return flushingQueue; },
-    set flushingQueue(v) { flushingQueue = v; },
     get modeAllowed() { return modeAllowed; },
   });
   const {
@@ -503,17 +504,15 @@ async function main() {
     unwrap,
     get SELF_ALIAS_TTL_MS() { return SELF_ALIAS_TTL_MS; },
     get bot() { return bot; },
-    get closedAgentPreset() { return closedAgentPreset; },
-    set closedAgentPreset(v) { closedAgentPreset = v; },
-    get currentMode() { return currentMode; },
-    set currentMode(v) { currentMode = v; },
+    flags,
     get selfAliasCache() { return selfAliasCache; },
     get selfNickname() { return selfNickname; },
     set selfNickname(v) { selfNickname = v; },
     get selfUserId() { return selfUserId; },
     set selfUserId(v) { selfUserId = v; },
     // 扮演时换预设（qq-roleplay：不带小鲸鱼速记/群三水设定），见 mode.js modePreset。
-    get isRoleplaying() { return isPlayingRole; },
+    // isPlayingRole 是函数声明（有提升），直接传引用即可，不需要 getter 包装（第 3 期）。
+    isRoleplaying: isPlayingRole,
   });
   const {
     refreshMode,
@@ -532,7 +531,7 @@ async function main() {
 
   /** 判断一个会话 key 是否仍被当前模式/白名单允许（供唤醒调度与 HTTP 路由共用）。 */
 
-  let flushingQueue = false;
+  flags.flushingQueue = false;
   const dshWatchMod = createDshWatchModule({
     api,
     flushQueue,
@@ -543,15 +542,8 @@ async function main() {
     slangWindows,
     get cleanupSocialForModeChange() { return cleanupSocialForModeChange; },
     get clearAllSocialV2Timers() { return clearAllSocialV2Timers; },
-    get currentMode() { return currentMode; },
-    set currentMode(v) { currentMode = v; },
+    flags,
     get drainAllPromptQueues() { return drainAllPromptQueues; },
-    get dshCheckStarted() { return dshCheckStarted; },
-    set dshCheckStarted(v) { dshCheckStarted = v; },
-    get dshReady() { return dshReady; },
-    set dshReady(v) { dshReady = v; },
-    get lastMode() { return lastMode; },
-    set lastMode(v) { lastMode = v; },
     get scheduleProactiveCheckV2() { return scheduleProactiveCheckV2; },
     get socialV2() { return socialV2; },
   });
@@ -565,7 +557,7 @@ async function main() {
   // startConsoleServer 已搬到 src/console/server.js（由 scripts/split-console.mjs --emit 生成）。
 
   // 会话代际：reset/清空工作区时递增，防止在途 ensureSession 把旧会话"复活"
-  let sessionEpoch = 0;
+  flags.sessionEpoch = 0;
 
   // 待应答的提问/审批：convKey -> pending
   const pending = new Map(); // key -> { kind, rpcId, sessionId, ... }
@@ -597,8 +589,7 @@ async function main() {
     text,
     withTimeout,
     get bot() { return bot; },
-    get currentMode() { return currentMode; },
-    set currentMode(v) { currentMode = v; },
+    flags,
     get randInt() { return randInt; },
     get sendChain() { return sendChain; },
     set sendChain(v) { sendChain = v; },
@@ -624,8 +615,7 @@ async function main() {
     path,
     safeFetchBuffer,
     get bot() { return bot; },
-    get currentMode() { return currentMode; },
-    set currentMode(v) { currentMode = v; },
+    flags,
     get messageMediaStore() { return messageMediaStore; },
     get socialV2() { return socialV2; },
   });
@@ -682,10 +672,7 @@ async function main() {
     state,
     unwrap,
     visionModelAppliedSessions,
-    get currentMode() { return currentMode; },
-    set currentMode(v) { currentMode = v; },
-    get sessionEpoch() { return sessionEpoch; },
-    set sessionEpoch(v) { sessionEpoch = v; },
+    flags,
   });
   const {
     ensureVisionModel,
@@ -727,6 +714,48 @@ async function main() {
   const messageMediaStore = new Map();
   // 二代会话见过的 forward id（有界，避免 recentMessages 滚动淘汰后无法读取刚见过的转发）
   const seenForwardIds = new Map(); // key -> Set<string>
+
+  // ── 会话状态登记处（第 2 期）：per-key 清理责任在这里收敛 ────────────────
+  // 以前重置一个会话要手抄 30 多个 delete（wipeConversation），DSH 断线时 pump 的
+  // finally 再抄一组，模式切换 timers 再抄第三组；加一个 per-key Map = 多处必改。
+  // 现在：声明处登记，清理走 disposeKey/disposeSession/clearSessions/clearStores。
+  // 登记处不搬数据居住地，只接管删除责任；名单 = 旧三张手写清单的并集，一个 store 不多。
+  const registry = createConversationRegistry();
+  registry.register('session', 'collectors', collectors);
+  registry.register('session', 'sendToolSucceededSessions', sendToolSucceededSessions);
+  registry.register('session', 'pendingSendToolCalls', pendingSendToolCalls);
+  registry.register('session', 'v2TurnStartAt', v2TurnStartAt);
+  registry.register('session', 'toolCallNames', toolCallNames);
+  registry.register('session', 'silentTurns', social.silentTurns);
+  registry.register('session', 'exitingSessions', social.exitingSessions);
+  registry.register('conv', 'pending', {
+    has: (k) => pending.has(k),
+    delete: (k) => {
+      const pe = pending.get(k);
+      if (pe) {
+        clearTimeout(pe.timer);
+        cancelPendingEntry(pe).catch(() => {});
+      }
+      pending.delete(k);
+    },
+  });
+  registry.register('conv', 'queued', queued);
+  registry.register('conv', 'queuedHintAt', queuedHintAt);
+  registry.register('conv', 'sessionPromises', sessionPromises);
+  registry.register('conv', 'recentMessages', social.recentMessages);
+  registry.register('conv', 'messageMediaStore', messageMediaStore);
+  registry.register('conv', 'pendingSummaries', social.pendingSummaries);
+  registry.register('conv', 'states', social.states);
+  registry.register('conv', 'silentContext', social.silentContext);
+  registry.register('conv', 'slangWindows', slangWindows);
+  registry.register('conv', 'slangExtractionCooldowns', slangExtractionCooldowns);
+  registry.register('conv', 'slangSubmitTimes', slangSubmitTimes);
+  registry.register('conv', 'pendingWakeKeys', pendingWakeKeys);
+  registry.register('conv', 'wakeConfigUpdatedKeys', wakeConfigUpdatedKeys);
+  registry.register('conv', 'markReadCalledKeys', markReadCalledKeys);
+  registry.register('conv', 'wakeConfigMissCount', wakeConfigMissCount);
+  registry.register('conv', 'conversations', socialV2.conversations);
+  registry.register('conv', 'seenForwardIds', seenForwardIds);
   const wakePolicyMod = createWakePolicyModule({
     allowedKeywords,
     allowedKeywordsRaw,
@@ -817,6 +846,7 @@ async function main() {
   // 放前面会 TDZ：`Cannot access 'socialStateMod' before initialization` —— 启动直接失败）。
   const contextShadowMod = createContextShadowModule({
     CONTEXT_SHADOW_FILE,
+    flags,
     atomicWriteJson,
     buildSlangContext,
     cfg,
@@ -857,7 +887,6 @@ async function main() {
     imageLibraryIndexText,
     log,
     readJsonSafe,
-    slangEntries,
   });
 
   // loadSocialV2State() 不能放在这里：它内部会调用 ctx.scheduleProactiveCheckV2()，
@@ -880,35 +909,29 @@ async function main() {
     randInt,
     social,
     textMentionsSelf,
-    get currentMode() { return currentMode; },
-    set currentMode(v) { currentMode = v; },
+    flags,
     get selfNickname() { return selfNickname; },
     set selfNickname(v) { selfNickname = v; },
   });
   const {
-    isSocialEnabled,
     socialState,
     isDirectAddress,
-    isMustReplyText,
-    appendRecentMessage,
-    appendSummary,
-    buildContextBlock,
     enterActive,
     cancelSocialTimers,
     cancelAllSocialTimers,
     cleanupSocialForModeChange,
     leaveActive,
+    buildContextBlock,
   } = socialFlowMod;
   const socialLoopMod = createSocialLoopModule({
+    buildContextBlock,
     DIRECTION_HINT,
     QUEUE_MAX,
     SENSITIVE_RE,
     SILENT_MARKER,
     SPACE_SPLIT_HINT,
     api,
-    appendSummary,
     auditAndSend,
-    buildContextBlock,
     buildMaterialV2: contextShadowMod.buildMaterialV2,
     cancelSocialTimers,
     cfg,
@@ -918,8 +941,6 @@ async function main() {
     enterActive,
     getSocialV2State,
     groupIdFromKey,
-    isMustReplyText,
-    isSocialEnabled,
     leaveActive,
     log,
     mdToPlain,
@@ -937,28 +958,14 @@ async function main() {
     socialState,
     state,
     withSlangContext,
-    get currentMode() { return currentMode; },
-    set currentMode(v) { currentMode = v; },
-    get dshReady() { return dshReady; },
-    set dshReady(v) { dshReady = v; },
+    flags,
   });
   const {
-    buildBatchPrompt,
-    buildProbePrompt,
-    buildActiveExitPrompt,
-    triggerActiveDurationExit,
-    buildProactivePrompt,
-    deliverPromptNow,
     deliverPrompt,
-    processPromptQueue,
-    scheduleSocialReply,
-    socialLoopTick,
-    startSocialLoop,
     flushSummaries,
   } = socialLoopMod;
-  if (isSocialEnabled() || cfg.social?.enabled !== false) {
-    startSocialLoop();
-  }
+  // 第 5 期 5c：startSocialLoop() 的空转 interval 已删（isSocialEnabled 恒 false，
+  // tick 第一行就 return；而 `|| cfg.social?.enabled !== false` 让它永远启动，纯噪音）。
 
   // 当前角色扮演提示：读 state/current-role.json + roles/<角色>.md，
   // 由桥接注入到 QQ 群消息（群友无法通过对话修改，只能由管理端写该文件）。
@@ -1171,12 +1178,9 @@ async function main() {
     socialV2,
     state,
     v2TurnStartAt,
-    get currentMode() { return currentMode; },
-    set currentMode(v) { currentMode = v; },
+    flags,
     get selfNickname() { return selfNickname; },
     set selfNickname(v) { selfNickname = v; },
-    get stickerEntries() { return stickerEntries; },
-    set stickerEntries(v) { stickerEntries = v; },
   });
   const {
     evaluateWakeTriggerV2,
@@ -1229,6 +1233,7 @@ async function main() {
   }
   const timersMod = createTimersModule({
     cfg,
+    registry,
     ensureWakeableV2,
     getSocialV2State,
     isConversationBusyV2,
@@ -1242,8 +1247,7 @@ async function main() {
     socialV2,
     wakeConfigMissCount,
     wakeConfigUpdatedKeys,
-    get currentMode() { return currentMode; },
-    set currentMode(v) { currentMode = v; },
+    flags,
   });
   const {
     cancelProactiveCheckV2,
@@ -1257,6 +1261,7 @@ async function main() {
   loadSocialV2State();
   const incomingMod = createIncomingModule({
     DIRECTION_HINT,
+    registry,
     KNOWN_AGENT_TOKENS,
   groupMemberNameCache,
     MAX_MEDIA_STORE_PER_KEY,
@@ -1270,11 +1275,8 @@ async function main() {
     allowed,
     api,
     appendActivity,
-    appendRecentMessage,
     appendSocialV2Message,
-    appendSummary,
     auditAndSend,
-    buildContextBlock,
     // 挂起请求域已搬到 src/domains/pending.js，构造点在下面 —— 比这里晚。
     // 直接写裸名字会在构造时求值 → TDZ，所以包一层 thunk，把查表推迟到调用时。
     cancelPendingEntry: (...a) => cancelPendingEntry(...a),
@@ -1297,7 +1299,6 @@ async function main() {
     handlePendingAnswer: (...a) => handlePendingAnswer(...a),  // 同上：pending 域构造点更晚
     isDirectAddress,
     isQuoteTargetSelf,
-    isSocialEnabled,
     log,
     markReadCalledKeys,
     mdToPlain,
@@ -1323,7 +1324,6 @@ async function main() {
     sanitizeRoleName,
     saveSocialV2State,
     saveState,
-    scheduleSocialReply,
     scheduleWakeV2,
     seenForwardIds,
     segmentsToText,
@@ -1340,19 +1340,13 @@ async function main() {
     socialV2,
     state,
     toolCallNames,
-    triggerActiveDurationExit,
     v2TurnStartAt,
     voice: voiceMod,
     wakeConfigMissCount,
     wakeConfigUpdatedKeys,
     withSlangContext,
     writeRoleState,
-    get currentMode() { return currentMode; },
-    set currentMode(v) { currentMode = v; },
-    get dshReady() { return dshReady; },
-    set dshReady(v) { dshReady = v; },
-    get sessionEpoch() { return sessionEpoch; },
-    set sessionEpoch(v) { sessionEpoch = v; },
+    flags,
   });
   const {
     handleIncoming,
@@ -1376,8 +1370,7 @@ async function main() {
     sendToQQ,
     socialV2,
     withTimeout,
-    get currentMode() { return currentMode; },
-    set currentMode(v) { currentMode = v; },
+    flags,
   });
   const {
     registerPending,
@@ -1387,6 +1380,7 @@ async function main() {
   } = pendingMod;
   const pumpMod = createPumpModule({
     KNOWN_AGENT_TOKENS,
+    registry,
     SENSITIVE_RE,
     SILENT_MARKER,
     SILENT_TURN_TIMEOUT_MS,
@@ -1408,7 +1402,6 @@ async function main() {
     isSendToolName,
     isSilentMarker,
     isSleepingConfigV2,
-    isSocialEnabled,
     learnerCollectors,
     learnerSessions,
     learnerWaiters,
@@ -1438,8 +1431,7 @@ async function main() {
     v2TurnStartAt,
     wakeConfigMissCount,
     wakeConfigUpdatedKeys,
-    get currentMode() { return currentMode; },
-    set currentMode(v) { currentMode = v; },
+    flags,
     get slangLearnerSessionId() { return slangLearnerSessionId; },
     set slangLearnerSessionId(v) { slangLearnerSessionId = v; },
   });
@@ -1561,6 +1553,19 @@ async function main() {
       biliScrollMod.onWakeDelivered();
     },
   });
+  // 晚绑定契约断言（第 3 期 3c）：上面若干 thunk/闭包的目标（media/socialState/pending/biliScroll
+  // 域）构造点更晚，历史上靠 TDZ「没人碰就不炸」；现在在装配末尾显式断言——
+  // 漏接线启动即失败，而不是运行时某条稀有路径才炸（3b 事故的教训：context-shadow 漏注入
+  // 只丢了一次唤醒才发现）。重排构造顺序彻底删 thunk 的事挂到第 5 期（先补域测试再动顺序）。
+  for (const [name, fn] of Object.entries({
+    fetchFaceMedia, fetchOneBotImage, getSocialV2State, cancelPendingEntry, handlePendingAnswer,
+  })) {
+    if (typeof fn !== 'function') throw new Error(`装配不完整：晚绑定目标 ${name} 不是函数`);
+  }
+  if (typeof biliScrollMod?.shareMeta !== 'function') {
+    throw new Error('装配不完整：biliScrollMod.shareMeta 缺失');
+  }
+
   startConsoleServer({
     cfg,
     bilibili: bilibiliMod,
@@ -1733,28 +1738,11 @@ async function main() {
     suggestQuietMsV2,
     TOOL_LOG_FILE,
     unquoteJsonString,
-    get currentMode() { return currentMode; },
-    set currentMode(v) { currentMode = v; },
-    get slangEntries() { return slangEntries; },
-    set slangEntries(v) { slangEntries = v; },
+    flags,
     get state() { return state; },
     set state(v) { state = v; },
     get pending() { return pending; },
     set pending(v) { pending = v; },
-    get stickerEntries() { return stickerEntries; },
-    set stickerEntries(v) { stickerEntries = v; },
-    get sessionEpoch() { return sessionEpoch; },
-    set sessionEpoch(v) { sessionEpoch = v; },
-    get stickerSyncedAt() { return stickerSyncedAt; },
-    set stickerSyncedAt(v) { stickerSyncedAt = v; },
-    get closedAgentPreset() { return closedAgentPreset; },
-    set closedAgentPreset(v) { closedAgentPreset = v; },
-    get dshReady() { return dshReady; },
-    set dshReady(v) { dshReady = v; },
-    get lastForcedAgentStickerSync() { return lastForcedAgentStickerSync; },
-    set lastForcedAgentStickerSync(v) { lastForcedAgentStickerSync = v; },
-    get lastMode() { return lastMode; },
-    set lastMode(v) { lastMode = v; },
   });
 
   await pumpMux();

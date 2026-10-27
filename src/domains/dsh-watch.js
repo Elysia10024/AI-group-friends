@@ -30,11 +30,11 @@ export function createDshWatchModule(ctx) {
     } catch { /* 探测 DSH host 是否可用：失败即置 ok=false，结果由返回值表达而不是异常 */ }
     if (ok) {
       await refreshMode();
-      if (!ctx.dshReady) {
-        ctx.dshReady = true;
-        ctx.lastMode = ctx.currentMode;
-        log(`DSH 已就绪（模式: ${ctx.currentMode}）`);
-        if (ctx.currentMode === 'reserved2') {
+      if (!ctx.flags.dshReady) {
+        ctx.flags.dshReady = true;
+        ctx.flags.lastMode = ctx.flags.currentMode;
+        log(`DSH 已就绪（模式: ${ctx.flags.currentMode}）`);
+        if (ctx.flags.currentMode === 'reserved2') {
           // 首次确定模式为 reserved2 后再恢复持久化的有限睡眠定时器，
           // 避免在 initial chat 模式下设置定时器导致 timeout 唤醒被模式守卫吞掉。
           for (const key of ctx.socialV2.conversations.keys()) {
@@ -46,34 +46,34 @@ export function createDshWatchModule(ctx) {
         try { await flushQueue(); } catch (error) { log('补投队列异常:', error?.message ?? error); }
         // DSH 恢复后，把离线期间攒下的黑话学习窗口补触发
         for (const key of [...slangWindows.keys()]) maybeQueueSlangExtraction(key);
-      } else if (ctx.currentMode !== ctx.lastMode) {
-        if (ctx.lastMode === 'reserved' && ctx.currentMode !== 'reserved') {
+      } else if (ctx.flags.currentMode !== ctx.flags.lastMode) {
+        if (ctx.flags.lastMode === 'reserved' && ctx.flags.currentMode !== 'reserved') {
           ctx.cleanupSocialForModeChange();
           log('桥接模式已离开一代仿真模式，清理社交状态');
         }
-        if (ctx.lastMode === 'reserved2' && ctx.currentMode !== 'reserved2') {
+        if (ctx.flags.lastMode === 'reserved2' && ctx.flags.currentMode !== 'reserved2') {
           ctx.clearAllSocialV2Timers();
           ctx.drainAllPromptQueues('模式切换，已取消排队中的投递');
           log('桥接模式已离开二代仿真模式，清理 reserved2 定时器与排队投递');
         }
-        if (ctx.currentMode === 'reserved2' && ctx.lastMode !== 'reserved2') {
+        if (ctx.flags.currentMode === 'reserved2' && ctx.flags.lastMode !== 'reserved2') {
           for (const key of ctx.socialV2.conversations.keys()) {
             setupSleepTimerV2(key);
             ctx.scheduleProactiveCheckV2(key);
           }
           log('桥接模式已进入二代仿真模式，重建有限睡眠定时器');
         }
-        log(`桥接模式已切换为: ${ctx.currentMode}`);
-        ctx.lastMode = ctx.currentMode;
+        log(`桥接模式已切换为: ${ctx.flags.currentMode}`);
+        ctx.flags.lastMode = ctx.flags.currentMode;
       }
-    } else if (ctx.dshReady) {
-      ctx.dshReady = false;
+    } else if (ctx.flags.dshReady) {
+      ctx.flags.dshReady = false;
       log('⚠️ DSH 不可用（重启中？），QQ 消息将入队等待');
     }
   };
   function startDshWatch() {
-    if (ctx.dshCheckStarted) return;
-    ctx.dshCheckStarted = true;
+    if (ctx.flags.dshCheckStarted) return;
+    ctx.flags.dshCheckStarted = true;
     checkDsh();
     setInterval(checkDsh, 5000);
   }

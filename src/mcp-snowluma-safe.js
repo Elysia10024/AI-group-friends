@@ -13,7 +13,6 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { SENSITIVE_RE } from './sensitive.js';
 import { createSnowlumaLib } from './mcp/snowluma-lib.js';
-import { registerStatusTools } from './mcp/tools/status.js';
 import { registerSendTools } from './mcp/tools/send.js';
 import { registerReadTools } from './mcp/tools/read.js';
 import { registerMemoryTools } from './mcp/tools/memory.js';
@@ -35,9 +34,7 @@ const mcpLib = createSnowlumaLib({
 const {
   loadConfig,
   getConfig,
-  getAccess,
   getOneBotConfig,
-  isAllowed,
   escapeCqText,
   unquoteJsonString,
   messageSegments,
@@ -45,14 +42,11 @@ const {
   agentApiBase,
   readConsoleToken,
   agentApi,
-  authorizeRead,
 } = mcpLib;
 
 const cfg = loadConfig();
 
 const server = new McpServer({ name: 'snowluma-safe', version: '0.1.0' });
-
-registerStatusTools(server, { onebot, getAccess, isAllowed, authorizeRead });
 
 registerSendTools(server, { agentApi, unquoteJsonString, cfg });
 

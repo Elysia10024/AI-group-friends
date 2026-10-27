@@ -12,8 +12,9 @@
 // 所以这里只配一张本来就公开的梗图，不碰任何私人图片。
 import fs from 'node:fs';
 import path from 'node:path';
+import { PROJECT_ROOT, aiqunyouPath } from './lib/paths.mjs';
 
-const ROOT = '<项目根>';
+const ROOT = PROJECT_ROOT;
 const BASE = 'http://127.0.0.1:3100';
 const consoleToken = fs.readFileSync(path.join(ROOT, 'state', 'console-token'), 'utf8').trim();
 const cfg = JSON.parse(fs.readFileSync(path.join(ROOT, 'config.json'), 'utf8').replace(/^\uFEFF/, ''));
@@ -52,7 +53,7 @@ const ledgerBefore = (() => {
 })();
 
 // 挑一张"适合"的梗图（配图用；它本来就是公开的表情图，不会被这次测试弄脏）
-const libRaw = JSON.parse(fs.readFileSync('<项目根>/image/library.json', 'utf8').replace(/^\uFEFF/, ''));
+const libRaw = JSON.parse(fs.readFileSync(aiqunyouPath('image/library.json'), 'utf8').replace(/^\uFEFF/, ''));
 const libImages = Array.isArray(libRaw) ? libRaw : (libRaw.images ?? []);
 const pick = libImages.find((i) => i.verdict === '适合' && i.by !== 'her') ?? libImages.find((i) => i.verdict === '适合');
 if (!pick) { console.error('❌ 图库里没有"适合"的图，配图这一步没法测'); process.exit(1); }

@@ -21,6 +21,8 @@ import { moodLine } from '../core/mood.js';
 import { relationLines } from '../core/relation.js';
 import { renderMomBlock } from '../core/mom-channel.js';
 
+import { readStateFile, stamp } from '../core/state-schema.js';
+
 export function createContextShadowModule(ctx) {
   const {
     CONTEXT_SHADOW_FILE,
@@ -30,6 +32,8 @@ export function createContextShadowModule(ctx) {
     formatMemoryV2,
     getMemberName,
     getMood,
+    // 妈妈留言的渲染默认读真实 state 文件（生产行为不变）；测试注入空串做隔离。
+    getMomBlock = renderMomBlock,
     getPeople,
     getOtherConversations,
     getOverlay,
@@ -40,13 +44,11 @@ export function createContextShadowModule(ctx) {
     isRoleplay,
     log,
     readJsonSafe,
-    slangEntries,
+    flags,
   } = ctx;
 
   const MAX_ENTRIES = 20;    // 影子里最多留最近 20 个回合（够核对，也不会撑大 state 目录）
   const MAX_RECENT = 40;     // 先取最近 40 条原文；再加长由组装器的字符上限兜底
-  // 妈妈留言的渲染默认读真实 state 文件（生产行为不变）；测试用 ctx.getMomBlock 注入空串做隔离。
-  const getMomBlock = typeof ctx.getMomBlock === 'function' ? ctx.getMomBlock : renderMomBlock;
 
   // 消息行的相对日子：跨天就标（minDays = 1），印象那边是 2 —— 两处共用 core 的 relativeDayLabel，
   // 只是门限不同。为什么消息行要跨天就标：这块叫"最近群聊"，最容易把昨天/前天的话读成"现在"
@@ -63,10 +65,10 @@ export function createContextShadowModule(ctx) {
   };
 
   const fmtRecent = (msgs, now = Date.now()) => (Array.isArray(msgs) ? msgs.slice(-MAX_RECENT) : [])
-    .map((m) => renderMessageLine(m, { clock: clockOf(m, now), text: m?.plain ?? m?.text, tag: relationTagOf(typeof getPeople === 'function' ? getPeople() : null, m?.userId) })).join('\n');
+    .map((m) => renderMessageLine(m, { clock: clockOf(m, now), text: m?.plain ?? m?.text, tag: relationTagOf(getPeople(), m?.userId) })).join('\n');
 
   const fmtUnread = (st, now = Date.now()) => (Array.isArray(st?.unread) ? st.unread.slice(-10) : [])
-    .map((m) => `- ${renderMessageLine(m, { clock: clockOf(m, now), text: m?.plain ?? m?.text, tag: relationTagOf(typeof getPeople === 'function' ? getPeople() : null, m?.userId) })}`).join('\n');
+    .map((m) => `- ${renderMessageLine(m, { clock: clockOf(m, now), text: m?.plain ?? m?.text, tag: relationTagOf(getPeople(), m?.userId) })}`).join('\n');
 
   // 「有人在找你」只写**她还没看过**（seq 水位线没过）且**没超 TTL**（默认 2 小时）的。
   // 判据与收尾销账共用 src/core/mention-window.js —— 三处各写一遍必然走偏。
@@ -81,13 +83,12 @@ export function createContextShadowModule(ctx) {
   // 否则 key 是数字、永远匹配不上，整块跨会话补料会**静默失效**（不报错、只是她又不认识人了）。
   const impressionLabel = (impKey, im, convKey, st = null) => displayNameForQq(impKey, {
     key: convKey,
-    people: typeof getPeople === 'function' ? getPeople() : null,
+    people: getPeople(),
     st,
     fallback: im?.displayName
   });
   const fmtForeignPersons = (st, convKey) => {
     try {
-      if (typeof getOtherConversations !== 'function') return '';
       const others = (getOtherConversations(convKey) ?? []).map((c) => ({
         key: c?.key,
         memberImpressions: Object.fromEntries(Object.entries(c?.memberImpressions ?? {})
@@ -156,14 +157,14 @@ export function createContextShadowModule(ctx) {
     const gid = String(key).startsWith('group:') ? String(key).slice(6) : '';
     const subLabel = subs.map((q) => {
       let name = '';
-      try { name = typeof getMemberName === 'function' ? getMemberName(gid, q) : ''; } catch { name = ''; }
+      try { name = getMemberName(gid, q); } catch { name = ''; }
       return name ? `${name}(${q})` : String(q);
     });
     return [
       `现在：${fmtNow()}`,
       fmtGap(st),
       // 心情是全局的（跨群串联）：在别的群受的影响，这里也带着；**不写别的群的名字**。
-      typeof getMood === 'function' ? moodLine(getMood(), key) : '',
+      moodLine(getMood(), key),
       `唤醒模式：${wc.mode === 'active' ? '活跃' : '潜水'}${wc.infinite ? '（无限期）' : (wc.sleepUntil ? `（睡到 ${wc.sleepUntil}）` : '')}`,
       `触发条件：${on.join('/') || '（无）'}${Number(tr.probability) > 0 ? ` 概率 ${tr.probability}` : ''}`,
       subs.length ? `你订阅了（他们一说话就叫醒你，不代表在 @ 你）：${subLabel.join('、')}` : '',
@@ -176,7 +177,7 @@ export function createContextShadowModule(ctx) {
     const st = getSocialV2State(key);
     // 角色扮演期间：记忆、跨会话补料、关系表都不注入 —— 那是小鲸鱼的东西，角色不该继承
     // （2026-10-19 主人要求：扮演的角色看不到小鲸鱼的记忆）。按 key 判断：群里宠物、私聊小鲸鱼。
-    const roleplay = typeof isRoleplay === 'function' && isRoleplay(key) === true;
+    const roleplay = isRoleplay(key) === true;
     // 取一次"现在"给 recent / 未读共用：两块的相对日子用同一个基准，免得同一份材料里
     // 一个块说"昨天"、另一个块说"前天"（跨零点那一分钟真会发生）。
     const now = Date.now();
@@ -189,22 +190,21 @@ export function createContextShadowModule(ctx) {
       // 否则「facts 块为空」那两条断言会在有真实留言的机器上变红（2026-10-24 修）。
       roleplay ? '' : getMomBlock(),
       // 会话级"地方设定"（这个群/这个私聊的氛围、熟人、规矩）放最前面：它比图库清单更"当前"。
-      typeof getOverlay === 'function' ? getOverlay(key) : '',
+      getOverlay(key),
       // 本会话提到、但印象记在**别的会话**里的人 → 补一小块（否则私聊里会出现"XXX 又是谁啊"）。
       // 关系（五档）跟 QQ 走：同一个 QQ 在任何群读到的都是同一档，但**用当前群的名字**称呼。
       (() => {
         try {
           if (roleplay) return '';                     // 扮演期间不给她看小鲸鱼的关系表
-          if (typeof getPeople !== 'function') return '';
           const lines = relationLines({ people: getPeople(), speakers: st?.recentMessages ?? [], max: 8 });
           return lines.length ? `【你和他们的关系】\n${lines.join('\n')}` : '';
         } catch { return ''; }
       })(),
       roleplay ? '' : fmtForeignPersons(st, key),
       // 表达方式（「场景 → 怎么说」）：只给这个群确认过的，最多 3 条；扮演期间不给。
-      roleplay ? '' : (typeof getExpressionBlock === 'function' ? getExpressionBlock(key) : ''),
+      roleplay ? '' : getExpressionBlock(key),
       // 图库清单是小鲸鱼的东西：扮演期间不给她看（宠物连发图工具都没有，2026-10-27 隔离）。
-      roleplay ? '' : (typeof imageLibraryIndexText === 'function' ? imageLibraryIndexText() : '')
+      roleplay ? '' : imageLibraryIndexText()
     ].filter(Boolean).join('\n\n');
     const trigger = [
       wakeReasonLine(extra.wakeReason || st.lastWakeReason),
@@ -219,11 +219,11 @@ export function createContextShadowModule(ctx) {
     return assembleContextV2({
       // 人格核心放最前（稳定块，参与前缀缓存）：她每轮都能看到自己是谁——
       // 以前只有预设里那份"小抄"每轮在，人格卡要她自己去 qq_get_prompt 拉，实测经常整轮不拉。
-      role: typeof getRoleCore === 'function' ? getRoleCore(key) : '',
+      role: getRoleCore(key),
       facts,
       memory: roleplay ? '' : formatMemoryV2(st, key),
       // 黑话表也是小鲸鱼的：扮演期间不给看（宠物不需要懂"烧货/大隐鲸"这些梗，2026-10-27 隔离）。
-      slang: roleplay ? '' : buildSlangContext(slangEntries, cfg.slang?.injectMax ?? 8, slangHaystack),
+      slang: roleplay ? '' : buildSlangContext(flags.slangEntries, cfg.slang?.injectMax ?? 8, slangHaystack),
       status: fmtStatus(st, key),
       recent: fmtRecent(st.recentMessages, now),
       trigger
@@ -250,9 +250,9 @@ export function createContextShadowModule(ctx) {
         actualPrompt: extra.actualPrompt ? String(extra.actualPrompt).slice(0, 4000) : '',
         text: assembled.text
       };
-      const prev = readJsonSafe(CONTEXT_SHADOW_FILE, { entries: [] });
+      const prev = readStateFile('context-shadow', CONTEXT_SHADOW_FILE, { entries: [] });
       const entries = [...(Array.isArray(prev?.entries) ? prev.entries : []), entry].slice(-MAX_ENTRIES);
-      atomicWriteJson(CONTEXT_SHADOW_FILE, { updatedAt: Date.now(), entries });
+      atomicWriteJson(CONTEXT_SHADOW_FILE, stamp('context-shadow', { updatedAt: Date.now(), entries }));
       log(`[影子组装] ${key}：约 ${entry.estTokens} token、前缀 ${entry.prefixHash}（仅观测，未改变她的输入）`);
       return entry;
     } catch (error) {
@@ -264,7 +264,7 @@ export function createContextShadowModule(ctx) {
 
   /** 控制台读最近几份（倒序）。 */
   function readShadowAssemblies(limit = 5) {
-    const data = readJsonSafe(CONTEXT_SHADOW_FILE, { entries: [] });
+    const data = readStateFile('context-shadow', CONTEXT_SHADOW_FILE, { entries: [] });
     const entries = Array.isArray(data?.entries) ? data.entries : [];
     return { updatedAt: data?.updatedAt ?? 0, entries: entries.slice(-Math.max(1, limit)).reverse() };
   }

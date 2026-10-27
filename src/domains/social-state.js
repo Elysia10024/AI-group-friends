@@ -58,6 +58,8 @@ import { hookFrequencyHint } from '../core/hook-frequency.js';
 
 import { MEMORY_FIELDS as MEMORY_V2_FIELDS, applyMemory, isMemoryEmpty, memoryFilePath, pickMemory } from '../core/memory-files.js';
 
+import { readStateFile, stamp } from '../core/state-schema.js';
+
 export function createSocialStateModule(ctx) {
   const {
     KNOWN_AGENT_TOKENS,
@@ -135,7 +137,7 @@ export function createSocialStateModule(ctx) {
 
   function loadSocialV2State() {
     try {
-      const raw = readJsonSafe(SOCIAL_V2_FILE, null);
+      const raw = readStateFile('social-v2', SOCIAL_V2_FILE, null);
       socialV2.paused = raw?.paused === true;
       if (raw && typeof raw.conversations === 'object') {
         const seenTokens = new Set();
@@ -162,7 +164,11 @@ export function createSocialStateModule(ctx) {
         saveSocialV2State();
       }
     } catch (error) {
-      log('读取 socialV2 状态失败:', error?.message ?? error);
+      // fail fast：这里若吞掉「文件存在但解析不了/版本不符」，会带着空状态继续跑，
+      // 下一次 save 就把磁盘上的原文件覆盖掉——记忆安静地变没（审计 P-02）。
+      // 抛出去让 bridge 启动失败、watchdog 持续报错，比清掉数据诚实。
+      log('读取 socialV2 状态失败（启动中止，状态文件未被覆盖）:', error?.message ?? error);
+      throw error;
     }
   }
 
@@ -319,7 +325,7 @@ export function createSocialStateModule(ctx) {
         conv.seenForwardIds = Array.from(seenForwardIds.get(key) || []).slice(-1000);
         obj.conversations[key] = conv;
       }
-      atomicWriteJson(SOCIAL_V2_FILE, obj);
+      atomicWriteJson(SOCIAL_V2_FILE, stamp('social-v2', obj));
       // 记忆走单独文件（每会话一个）：不同群的记忆不混在一个文件里，也不会被运行时状态写坏。
       try {
         (ctx.fs?.mkdirSync ?? fs.mkdirSync)(MEMORY_DIR, { recursive: true });

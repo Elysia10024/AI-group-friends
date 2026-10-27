@@ -5,8 +5,9 @@
 // 跑法：npm run audit:cost        最近 14 天
 //       npm run audit:cost -- 30  最近 30 天
 import fs from 'node:fs';
+import { AIQUNYOU_ROOT } from '../lib/paths.mjs';
 
-const ROOT = '<项目根>';
+const ROOT = AIQUNYOU_ROOT;
 const DAYS = Number(process.argv[2]) || 14;
 const P = { miss: 0.30, hit: 0.006, out: 1.2 };
 const CNY = 7.1;
