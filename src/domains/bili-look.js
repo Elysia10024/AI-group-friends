@@ -11,6 +11,7 @@ import fs from 'node:fs';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { BILI_LOOK_DEFAULTS, extractBv, pickSharer, quotaAllowed, bumpQuota, formatLookText } from '../core/bili-look.js';
+import { appendNote, makeNote } from '../core/bili-notes.js';
 import { signWbi } from '../core/bilibili.js';
 import { localDayKey } from '../core/local-day.js';
 
@@ -23,6 +24,8 @@ export function createBiliLookModule(ctx) {
   const { cfg, log, stateDir, readJsonSafe, atomicWriteJson, getSocialV2State } = ctx;
   const stateFile = path.join(stateDir, 'bili-look.json');
   const cookieFile = path.join(stateDir, 'bilibili-cookie.json');
+  // 看过的视频笔记（2026-10-27）：和自刷共用 state/bili-notes.json，source 标 share。
+  const notesFile = path.join(stateDir, 'bili-notes.json');
 
   let state = readJsonSafe(stateFile, { version: 1, look: {} });
   if (!state || typeof state !== 'object' || Array.isArray(state)) state = { version: 1, look: {} };
@@ -337,12 +340,44 @@ export function createBiliLookModule(ctx) {
       frames: out.images.length
     });
 
+    // 看过的视频落笔记（内容摘要，source=share）：以后检索/回灌材料用。
+    let noted = false;
+    try {
+      const note = makeNote({
+        bv,
+        title: out.view?.title ?? '',
+        owner: out.view?.owner?.name,
+        duration: out.view?.duration,
+        desc: out.view?.desc,
+        comments: out.comments,
+        key,
+        source: 'share',
+        at: Date.now()
+      });
+      if (note) {
+        const store = readJsonSafe(notesFile, { version: 1, notes: [] });
+        const notes = appendNote(Array.isArray(store?.notes) ? store.notes : [], note);
+        atomicWriteJson(notesFile, { version: 1, notes });
+        noted = true;
+        log(`[bili-notes] 记下 ${bv}（分享｜共 ${notes.length} 条）`);
+      }
+    } catch (error) {
+      log(`[bili-notes] 笔记写入失败：${error?.message ?? error}`);
+    }
+
+    // 看完引导她**自己**把要记的规则/注意事项写进长期记忆（2026-10-27 用户要求：
+    // 视频里的注意事项要她自己学、自动记，不靠人工补记忆）。
+    const learnHint = '【看完记一笔】如果视频里有要记住的规则、注意事项或知识点（比如「这几句话别说」「这几步别做」「这个坑别踩」），'
+      + '现在就调用 qq_memory_append 记一条（category=activeTopic，写具体内容，别写「视频里讲了些注意事项」这种空话）——'
+      + '不记的话这一轮结束就忘了，下次再想起来就来不及了。';
+
     log(`[bili-look] ${key} 看了 ${bv}（分享者 ${sharer.sender}/${who}${out.images.length ? `，${out.images.length} 帧` : ''}）`);
     return {
-      text: out.text,
+      text: `${out.text}\n\n${learnHint}`,
       bv,
       sharer: { userId: sharer.userId, sender: sharer.sender },
       images: out.images,
+      noted,
       ...(out.framesNote ? { framesNote: out.framesNote } : {})
     };
   }

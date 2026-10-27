@@ -20,7 +20,7 @@ export const BILI_NOTES_DEFAULTS = {
  * @returns {object|null}
  */
 export function makeNote(input) {
-  const { bv, title, tname, owner, duration, desc, comments, key, at } = input ?? {};
+  const { bv, title, tname, owner, duration, desc, comments, key, at, source } = input ?? {};
   const b = String(bv ?? '').trim();
   if (!/^BV[0-9A-Za-z]{10}$/.test(b)) return null;
   const list = (Array.isArray(comments) ? comments : [])
@@ -40,6 +40,8 @@ export function makeNote(input) {
     desc: String(desc ?? '').replace(/\s+/g, ' ').trim().slice(0, BILI_NOTES_DEFAULTS.maxDesc),
     comments: list,
     key: String(key ?? '').trim().slice(0, 40),
+    // self = 自己刷到的；share = 群友（含主人）分享、她点开看的。以后检索/回灌材料时分开用。
+    source: source === 'share' ? 'share' : 'self',
     at: Number(at) || Date.now()
   };
 }
