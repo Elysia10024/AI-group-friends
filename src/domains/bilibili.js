@@ -262,6 +262,9 @@ export function createBilibiliModule(ctx) {
 
   async function tick() {
     if (running) return;
+    // 角色扮演（宠物等非小鲸鱼角色）期间不播报：订阅/内容都是小鲸鱼的，群友看到会串味。
+    const roleNow = String(readRoleState()?.role ?? '').trim();
+    if (roleNow && roleNow !== '小鲸鱼') return;
     const o = opts();
     if (!inActiveHours(o)) return;
     running = true;

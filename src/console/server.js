@@ -17,6 +17,7 @@ import crypto from 'node:crypto';
 import { rateLimitCheck, reserveSlots, rollbackSlots, RATE_LIMIT_ERROR, hourCapFor } from '../core/ratelimit.js';
 import { resetPreSleepWait, markAiSpoke, recentLimitOf, capList } from '../core/social-state.js';
 import { isChatMuted } from '../core/mute.js';
+import { isRoleplayRole, roleplayToolAllowed } from '../core/role-tools.js';
 import { handleAdmin1, handleAdmin2, handleAdmin3, handleAdmin4, handleAdmin5 } from './routes/admin.js';
 import { handleRole1 } from './routes/role.js';
 import { handleSlang1, handleSlang2 } from './routes/slang.js';
@@ -370,6 +371,16 @@ export function startConsoleServer(deps) {
         const qKey = String(url.searchParams.get('key') ?? '');
         if (qKey && isChatMuted(readRoleState().mode, qKey)) {
           sendJson({ ok: false, error: '静默模式已开启（关闭聊天功能）：群聊不再读取' }, 403);
+          return;
+        }
+      }
+      // 角色扮演（宠物等非小鲸鱼角色）期间的硬门禁：只放行聊天/看消息/识图/收尾。
+      // 用户要求「宠物与小鲸鱼全线隔离，仅保留识图，取消发图/语音/学习等」（2026-10-27）——
+      // 角色卡/提示词只是软约束，这里才是真正的工具白名单。
+      if (req.headers['x-agent-token'] && (url.pathname.startsWith('/api/socialV2/') || url.pathname.startsWith('/api/images/'))) {
+        const roleNow = String(readRoleState()?.role ?? '').trim();
+        if (isRoleplayRole(roleNow) && !roleplayToolAllowed(url.pathname)) {
+          sendJson({ ok: false, error: '当前角色只能聊天和看图片；发图/语音/视频/学习这类工具都用不了' }, 403);
           return;
         }
       }

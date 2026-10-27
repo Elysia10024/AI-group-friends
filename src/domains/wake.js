@@ -97,6 +97,9 @@ export function createWakeModule(ctx) {
         groups: typeof ctx.biliShareGroups === 'function' ? ctx.biliShareGroups() : []
       }
       : null;
+    // 角色扮演（宠物等非小鲸鱼角色）：小鲸鱼专属的材料段一律不带——表情策略、说说额度、
+    // B 站订阅这些她都用不了（工具也被白名单禁了），带上只会让她想"我能不能用"。
+    const roleplay = !!String(roleState?.role ?? '').trim() && roleState.role !== '小鲸鱼';
     return buildWakePrompt({
       key,
       reason,
@@ -104,15 +107,15 @@ export function createWakeModule(ctx) {
       roleState,
       selfAliases,
       st,
-      memoryText,
+      memoryText: roleplay ? '' : memoryText,
       participationText,
-      stickerText,
+      stickerText: roleplay ? '' : stickerText,
       // 说说那一行（额度 + 上一条）：关掉 / 没开提示时是空串。每轮都带，一行 ~100 字。
-      qzoneText: qzonePromptText ? qzonePromptText() : '',
+      qzoneText: roleplay ? '' : (qzonePromptText ? qzonePromptText() : ''),
       // B 站订阅那一行：关注了谁 + 最近播报了什么。播报是桥接直接发的、没进过她的上下文，
       // 不给这行她答不上「你关注的那几个游戏有新动态吗」。
-      biliText: typeof ctx.biliPromptText === 'function' ? ctx.biliPromptText(key) : '',
-      qzoneComment,
+      biliText: roleplay ? '' : (typeof ctx.biliPromptText === 'function' ? ctx.biliPromptText(key) : ''),
+      qzoneComment: roleplay ? null : qzoneComment,
       inlineMax: cfg.socialV2?.context?.inlineMessages,
       // 沉睡前观察只在开关打开时才提；传 0 表示"别提这件事"（prompt 侧据此不再要求等待）。
       // 开关关着还让她先观察 2 分钟，既跟「收尾要快」打架，也白花一次工具调用的钱。

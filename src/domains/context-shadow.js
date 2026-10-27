@@ -203,7 +203,8 @@ export function createContextShadowModule(ctx) {
       roleplay ? '' : fmtForeignPersons(st, key),
       // 表达方式（「场景 → 怎么说」）：只给这个群确认过的，最多 3 条；扮演期间不给。
       roleplay ? '' : (typeof getExpressionBlock === 'function' ? getExpressionBlock(key) : ''),
-      typeof imageLibraryIndexText === 'function' ? imageLibraryIndexText() : ''
+      // 图库清单是小鲸鱼的东西：扮演期间不给她看（宠物连发图工具都没有，2026-10-27 隔离）。
+      roleplay ? '' : (typeof imageLibraryIndexText === 'function' ? imageLibraryIndexText() : '')
     ].filter(Boolean).join('\n\n');
     const trigger = [
       wakeReasonLine(extra.wakeReason || st.lastWakeReason),

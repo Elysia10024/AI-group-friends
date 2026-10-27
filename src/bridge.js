@@ -374,6 +374,7 @@ async function main() {
     parseResearchJson,
     path,
     readJsonSafe,
+    readRoleState,
     saveSlang,
     slangExtractionCooldowns,
     slangResearchingIds,
@@ -1504,6 +1505,8 @@ async function main() {
   }
   startCommentWatch({
     onFound: async () => {
+      // 角色扮演（宠物等）期间不处理空间评论：说说/空间是小鲸鱼的东西（2026-10-27 全线隔离）。
+      if (isPlayingRole()) return;
       const key = qzoneCommentWakeKey();
       if (isConversationBusyV2(key, getSocialV2State(key))) {
         log(`[说说] 有新评论，但 ${key} 正忙 —— 通知留着，下一轮再叫`);
@@ -1546,6 +1549,8 @@ async function main() {
     // 唤醒的是「坐镇会话」；分享可以跨群（prompt 里给她白名单群列表，她挑 1~2 个发）。
     // onWakeDelivered 在投递后清空待分享池：同一条视频不反复提（投递失败也清，最多丢一次分享机会）。
     onWake: async () => {
+      // 角色扮演（宠物等）期间不自刷 B 站：学习和看视频是"小鲸鱼"的功能（2026-10-27 隔离）。
+      if (isPlayingRole()) return;
       await sendWakePromptV2(String(cfg.biliScroll?.groupKey || 'group:20000001'), 'biliScroll');
       biliScrollMod.onWakeDelivered();
     },
