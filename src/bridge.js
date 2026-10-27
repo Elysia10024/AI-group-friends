@@ -1366,6 +1366,7 @@ async function main() {
     log,
     modeAllowed,
     pending,
+    readRoleState,
     resolveGroupMemberName,
     saveSocialV2State,
     scheduleWakeV2,

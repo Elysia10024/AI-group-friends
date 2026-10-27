@@ -25,6 +25,7 @@ export function createPendingModule(ctx) {
     log,
     modeAllowed,
     pending,
+    readRoleState,
     resolveGroupMemberName,
     saveSocialV2State,
     scheduleWakeV2,
@@ -177,6 +178,13 @@ export function createPendingModule(ctx) {
       suffix: event.suffix
     });
     appendActivity(`${key} 拍一拍事件：${msg.text.slice(0, 80)}`);
+    // 角色扮演（古早笨 AI/宠物）期间：被戳固定回「在呢」——不叫模型、不嫌烦，戳一万次也一样。
+    // 2026-10-27 用户要求：机械式问答，越笨越好；这条在桥接层硬实现，零模型成本。
+    const roleNow = String((typeof readRoleState === 'function' ? readRoleState()?.role : '') ?? '').trim();
+    if (targetIsSelf && roleNow && roleNow !== '小鲸鱼') {
+      try { await sendToQQ(key, '在呢'); } catch (e) { log(`拍一拍固定应答失败 ${key}: ${e?.message ?? e}`); }
+      return;
+    }
     if (ctx.currentMode !== 'reserved2') return;
     if (socialV2.paused) return;
     const st = getSocialV2State(key);
