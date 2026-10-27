@@ -222,7 +222,8 @@ export function createContextShadowModule(ctx) {
       role: typeof getRoleCore === 'function' ? getRoleCore() : '',
       facts,
       memory: roleplay ? '' : formatMemoryV2(st, key),
-      slang: buildSlangContext(slangEntries, cfg.slang?.injectMax ?? 8, slangHaystack),
+      // 黑话表也是小鲸鱼的：扮演期间不给看（宠物不需要懂"烧货/大隐鲸"这些梗，2026-10-27 隔离）。
+      slang: roleplay ? '' : buildSlangContext(slangEntries, cfg.slang?.injectMax ?? 8, slangHaystack),
       status: fmtStatus(st, key),
       recent: fmtRecent(st.recentMessages, now),
       trigger

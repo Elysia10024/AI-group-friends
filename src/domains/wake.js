@@ -146,6 +146,17 @@ export function createWakeModule(ctx) {
   async function sendWakePromptV2(key, reason) {
     if (cfg.socialV2?.enabled === false) return;
     if (ctx.currentMode !== 'reserved2' || socialV2.paused) return;
+    // 角色扮演期间只响应点名/私聊（防止其它路径绕过 scheduleWakeV2 的过滤直接叫醒）。
+    {
+      const roleNow = String((typeof readRoleState === 'function' ? readRoleState()?.role : '') ?? '').trim();
+      if (roleNow && roleNow !== '小鲸鱼') {
+        const base = String(reason ?? '').split(':')[0];
+        if (!['atMention', 'nameMention', 'private'].includes(base)) {
+          log(`[reserved2] 跳过唤醒 ${key}（${reason}）：角色扮演期间只响应点名/私聊`);
+          return;
+        }
+      }
+    }
     // 静默模式（「关闭聊天功能」）时群聊**连叫醒都停**：既不发话（send 闸门也拦），
     // 也不该让 DSH 白跑一轮 turn —— 那会照常烧 token（她在想，只是发不出去）。
     // **私聊照常叫醒**（判定见 src/core/mute.js）。
@@ -358,6 +369,18 @@ export function createWakeModule(ctx) {
     if (!isSessionAllowedInCurrentMode(key)) {
       log(`[reserved2] 跳过计划唤醒 ${key}（${reason}）：会话已不在当前模式允许范围内`);
       return;
+    }
+    // 角色扮演（古早笨 AI/宠物等非小鲸鱼角色）：只保留「有人点名」的唤醒，主动机制全部停——
+    // densityWake 凑热闹、proactiveCheck 没话找话、probability/question、followUp、timeout、bootstrap
+    // 一律不叫。2026-10-27 用户要求：机械应答，只被叫才回。
+    // （poke 在 pending.js 就被固定应答「在呢」拦下，到不了这里；redPacket 也不叫。）
+    const roleNow = String((typeof readRoleState === 'function' ? readRoleState()?.role : '') ?? '').trim();
+    if (roleNow && roleNow !== '小鲸鱼') {
+      const base = String(reason ?? '').split(':')[0];
+      if (!['atMention', 'nameMention', 'private'].includes(base)) {
+        log(`[reserved2] 跳过计划唤醒 ${key}（${reason}）：角色扮演期间只响应点名/私聊`);
+        return;
+      }
     }
     const st = getSocialV2State(key);
     if (st.pendingWakeTimer) {
