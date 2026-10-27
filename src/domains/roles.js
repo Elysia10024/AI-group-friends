@@ -46,24 +46,47 @@ function roleExists(name) {
   return fs.existsSync(path.join(ROOT, 'roles', safe, 'core.md')) || fs.existsSync(path.join(ROOT, 'roles', safe + '.md'));
 }
 
-// 读取角色/模式状态：{"role": "傲娇助手", "mode": "active"|"silent"}
-function readRoleState() {
-  return readJsonSafe(ROLE_STATE_FILE, { role: null, mode: 'active' });
-}
-function writeRoleState(role, mode) {
-  const prev = readRoleState();
-  const nextRole = role ?? null;
-  const next = { role: nextRole, mode: mode ?? 'active' };
-  if (prev?.role !== nextRole) {
-    // 角色切换：记住上一个角色。材料里要用它提醒"你刚才在扮演 X"，
-    // 否则切回小鲸鱼后她会把扮演时说过的话当成自己说过的（2026-10-19 主人要求）。
-    next.previous = prev?.role ?? null;
-    next.switchedAt = Date.now();
-  } else {
-    // 模式切换（active/silent）不算角色切换，保留原记录
-    if (prev?.previous !== undefined) next.previous = prev.previous;
-    if (prev?.switchedAt !== undefined) next.switchedAt = prev.switchedAt;
+// 读取角色/模式状态。支持**按群角色**（2026-10-27 用户要求）：
+//   · 全局 role/mode = 私聊和没覆盖的群（默认是小鲸鱼）；
+//   · groupRole = 群聊默认覆盖（比如「鲸鲸宝宝」= 群宠物）；
+//   · 传 key 时：group:* 且 groupRole 存在 → 返回 groupRole 视角；private 或无覆盖 → 全局。
+// 这样同一个号可以「群里是宠物、私聊是小鲸鱼」，不用改所有群的配置。
+function readRoleState(key) {
+  const st = readJsonSafe(ROLE_STATE_FILE, { role: null, mode: 'active' });
+  const base = {
+    role: st?.role ?? null,
+    mode: st?.mode ?? 'active',
+    groupRole: st?.groupRole ?? null,
+    previous: st?.previous,
+    switchedAt: st?.switchedAt
+  };
+  const k = String(key ?? '').trim();
+  if (k.startsWith('group:') && base.groupRole) {
+    return { ...base, role: base.groupRole };
   }
+  return base;
+}
+// 写角色状态：默认写全局；opts.group === true 时写「群聊默认角色」（groupRole）。
+function writeRoleState(role, mode, opts = {}) {
+  const st = readJsonSafe(ROLE_STATE_FILE, { role: null, mode: 'active' });
+  const next = { ...st };
+  const nextRole = role ?? null;
+  const isGroup = opts?.group === true;
+  if (isGroup) {
+    const prevGroup = st?.groupRole ?? null;
+    if (prevGroup !== nextRole) {
+      next.previous = prevGroup;
+      next.switchedAt = Date.now();
+    }
+    next.groupRole = nextRole;
+  } else {
+    if ((st?.role ?? null) !== nextRole) {
+      next.previous = st?.role ?? null;
+      next.switchedAt = Date.now();
+    }
+    next.role = nextRole;
+  }
+  next.mode = mode ?? st?.mode ?? 'active';
   atomicWriteJson(ROLE_STATE_FILE, next);
 }
 function sanitizeRoleName(name) {

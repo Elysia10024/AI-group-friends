@@ -378,7 +378,8 @@ export function startConsoleServer(deps) {
       // 用户要求「宠物与小鲸鱼全线隔离，仅保留识图，取消发图/语音/学习等」（2026-10-27）——
       // 角色卡/提示词只是软约束，这里才是真正的工具白名单。
       if (req.headers['x-agent-token'] && (url.pathname.startsWith('/api/socialV2/') || url.pathname.startsWith('/api/images/'))) {
-        const roleNow = String(readRoleState()?.role ?? '').trim();
+        const gateKey = String(url.searchParams.get('key') ?? '').trim();
+        const roleNow = String(readRoleState(gateKey)?.role ?? '').trim();
         if (isRoleplayRole(roleNow) && !roleplayToolAllowed(url.pathname)) {
           sendJson({ ok: false, error: '当前角色只能聊天和看图片；发图/语音/视频/学习这类工具都用不了' }, 403);
           return;

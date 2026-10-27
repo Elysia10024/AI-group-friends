@@ -175,8 +175,8 @@ export function createContextShadowModule(ctx) {
   function buildMaterialV2(key, extra = {}) {
     const st = getSocialV2State(key);
     // 角色扮演期间：记忆、跨会话补料、关系表都不注入 —— 那是小鲸鱼的东西，角色不该继承
-    // （2026-10-19 主人要求：扮演的角色看不到小鲸鱼的记忆）。
-    const roleplay = typeof isRoleplay === 'function' && isRoleplay() === true;
+    // （2026-10-19 主人要求：扮演的角色看不到小鲸鱼的记忆）。按 key 判断：群里宠物、私聊小鲸鱼。
+    const roleplay = typeof isRoleplay === 'function' && isRoleplay(key) === true;
     // 取一次"现在"给 recent / 未读共用：两块的相对日子用同一个基准，免得同一份材料里
     // 一个块说"昨天"、另一个块说"前天"（跨零点那一分钟真会发生）。
     const now = Date.now();
@@ -219,7 +219,7 @@ export function createContextShadowModule(ctx) {
     return assembleContextV2({
       // 人格核心放最前（稳定块，参与前缀缓存）：她每轮都能看到自己是谁——
       // 以前只有预设里那份"小抄"每轮在，人格卡要她自己去 qq_get_prompt 拉，实测经常整轮不拉。
-      role: typeof getRoleCore === 'function' ? getRoleCore() : '',
+      role: typeof getRoleCore === 'function' ? getRoleCore(key) : '',
       facts,
       memory: roleplay ? '' : formatMemoryV2(st, key),
       // 黑话表也是小鲸鱼的：扮演期间不给看（宠物不需要懂"烧货/大隐鲸"这些梗，2026-10-27 隔离）。

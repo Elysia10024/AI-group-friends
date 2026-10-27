@@ -535,10 +535,19 @@ export function createAdminCommandsModule(deps) {
       if (hit?.id === 'role' || plainContent === '/role' || plainContent.startsWith('/role ')) {
       // 斜杠写法从 "/role " 之后取名字；自然语言写法由匹配层用命名组 arg 取出来。
       const name = sanitizeRoleName(hit?.id === 'role' ? hit.arg : plainContent.slice(5).trim());
+      // 按会话类型切：群里发 /role = 切「群聊角色」（所有群）；私聊发 = 切「全局角色」（私聊/无覆盖群）。
+      // 这样群里可以是宠物、私聊还是小鲸鱼（2026-10-27 用户要求按群角色）。
+      const isGroupCmd = String(kind ?? '') === 'group' || String(key ?? '').startsWith('group:');
       if (!name || name === 'off' || name === 'clear') {
-        writeRoleState(DEFAULT_ROLE_NAME, roleState.mode);
-        const restored = restoreConversation(key);
-        await sendToQQ(key, restored ? '已退出角色扮演，恢复正常人格（之前的对话已恢复）。' : '已退出角色扮演，恢复正常人格。');
+        // 退出：群聊 /role off = 清掉群聊角色（群恢复全局角色）；私聊 = 清全局角色。
+        writeRoleState(isGroupCmd ? null : DEFAULT_ROLE_NAME, roleState.mode, { group: isGroupCmd });
+        let restoredAny = false;
+        for (const k of socialV2.conversations.keys()) {
+          if (String(k).startsWith('group:') === isGroupCmd && restoreConversation(k)) restoredAny = true;
+        }
+        await sendToQQ(key, restoredAny
+          ? `已退出${isGroupCmd ? '群聊' : '私聊'}角色扮演，恢复正常人格（之前的对话已恢复）。`
+          : `已退出${isGroupCmd ? '群聊' : '私聊'}角色扮演，恢复正常人格。`);
       } else {
         // 角色可以是目录（roles/<名字>/core.md，模块化结构）或单文件（roles/<名字>.md，旧结构）。
         const roleDir = path.join(ROOT, 'roles', name, 'core.md');
@@ -546,16 +555,22 @@ export function createAdminCommandsModule(deps) {
         if (!fs.existsSync(roleFile)) {
           await sendToQQ(key, `角色「${name}」不存在。角色放 qq-bridge/roles/<名字>/core.md，或单个 roles/<名字>.md。`);
         } else {
-          const wasDefault = !roleState?.role || roleState.role === DEFAULT_ROLE_NAME;
-          writeRoleState(name, roleState.mode);
+          const cur = isGroupCmd ? String(roleState.groupRole ?? '') : String(roleState.role ?? '');
+          const wasDefault = !cur || cur === DEFAULT_ROLE_NAME;
+          writeRoleState(name, roleState.mode, { group: isGroupCmd });
+          const scope = isGroupCmd ? 'group:' : 'private:';
           if (wasDefault) {
-            // 进入扮演：先备份这个会话的上下文，再清场（她以新角色从干净开场说话）
-            isolateConversation(key);
-            await sendToQQ(key, `已切换角色：${name}（会话已隔离，下一条就是角色本人）。`);
+            // 进入扮演：只隔离该类型的会话（群聊/私聊各自隔离，互不影响）。
+            for (const k of socialV2.conversations.keys()) {
+              if (String(k).startsWith(scope)) isolateConversation(k);
+            }
+            await sendToQQ(key, `已切换${isGroupCmd ? '群聊' : '私聊'}角色：${name}（${isGroupCmd ? '所有群' : '所有私聊'}已隔离，下一条就是角色本人）。`);
           } else {
-            // 角色间切换：第一次的备份已在，继续清场就行
-            wipeConversation(key);
-            await sendToQQ(key, `已切换角色：${name}。`);
+            // 角色间切换：第一次的备份已在，继续清场就行。
+            for (const k of socialV2.conversations.keys()) {
+              if (String(k).startsWith(scope)) wipeConversation(k);
+            }
+            await sendToQQ(key, `已切换${isGroupCmd ? '群聊' : '私聊'}角色：${name}。`);
           }
         }
       }

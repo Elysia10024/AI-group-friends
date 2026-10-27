@@ -833,13 +833,14 @@ async function main() {
     },
     // 人格核心（roles/<角色>/core.md）：放进材料最前面的稳定块，每轮都在。
     // 退出角色扮演后的 12 小时内，最前面再补一句"你刚才在扮演 X"（见 roleSwitchNote）。
-    getRoleCore: () => {
-      const core = currentRoleHint();
+    getRoleCore: (key) => {
+      const core = currentRoleHint(key);
       const note = roleSwitchNote();
       return note ? `${note}\n\n${core}` : core;
     },
     // 角色扮演期间：材料里不注入记忆/关系/心情（角色不该继承小鲸鱼的东西）
-    isRoleplay: () => isPlayingRole(),
+    // 按 key 判断（群聊看 groupRole，私聊看全局角色）——群宠物、私聊小鲸鱼可以并存。
+    isRoleplay: (key) => isPlayingRole(key),
     // 心情（全局、跨群）：在别的群受的影响这里也带着 —— 渲染时不写别的群的名字。
     // 角色扮演期间不给她看心情：那是小鲸鱼的状态，不该被扮演的角色继承（2026-10-19）。
     getMood: () => (isPlayingRole() ? null : getMood()),
@@ -962,10 +963,11 @@ async function main() {
   // 当前角色扮演提示：读 state/current-role.json + roles/<角色>.md，
   // 由桥接注入到 QQ 群消息（群友无法通过对话修改，只能由管理端写该文件）。
   // 缓存 key 为两个文件的 mtime，mtime 未变时直接返回，避免每次同步读文件。
+  // 按会话 key 取角色：群聊可能看 groupRole（群里宠物、私聊小鲸鱼），缓存也要带角色名。
   let roleHintCache = { key: '', hint: '' };
-  function currentRoleHint() {
+  function currentRoleHint(key) {
     try {
-      const rs = readRoleState();
+      const rs = readRoleState(key);
       if (!rs.role) return '';
       // 新结构：roles/<角色>/core.md（人格层）；旧结构 roles/<角色>.md 仍兼容。
       const coreFile = path.join(ROOT, 'roles', rs.role, 'core.md');
@@ -973,7 +975,7 @@ async function main() {
       if (!fs.existsSync(roleFile)) return '';
       const stateStat = fs.statSync(ROLE_STATE_FILE);
       const roleStat = fs.statSync(roleFile);
-      const cacheKey = `${stateStat.mtimeMs}:${roleStat.mtimeMs}`;
+      const cacheKey = `${rs.role}:${stateStat.mtimeMs}:${roleStat.mtimeMs}`;
       if (roleHintCache.key === cacheKey) return roleHintCache.hint;
       let hint = fs.readFileSync(roleFile, 'utf8');
       if (hint.length > 24000) hint = hint.slice(0, 24000); // 人格核心里有"记忆/图库/情绪"等章节，截断线要留够（旧的 16000 会把后半本切掉）
@@ -991,9 +993,10 @@ async function main() {
   // 过了窗口，记忆里的 [扮演:X] 标记仍然是唯一凭据。
   const ROLE_SWITCH_NOTE_TTL_MS = 2 * 3600 * 1000;
   // 当前是不是在扮演别人（≠ 小鲸鱼）。记忆/心情隔离和切回提示都靠它。
-  function isPlayingRole() {
+  // 传 key：群聊看 groupRole（群里宠物、私聊小鲸鱼），不传则看全局角色。
+  function isPlayingRole(key) {
     try {
-      const rs = readRoleState();
+      const rs = readRoleState(key);
       const r = String(rs?.role ?? '').trim();
       return Boolean(r && r !== '小鲸鱼');
     } catch {
@@ -1506,9 +1509,10 @@ async function main() {
   }
   startCommentWatch({
     onFound: async () => {
-      // 角色扮演（宠物等）期间不处理空间评论：说说/空间是小鲸鱼的东西（2026-10-27 全线隔离）。
-      if (isPlayingRole()) return;
       const key = qzoneCommentWakeKey();
+      // 角色扮演（宠物等）期间不处理空间评论：说说/空间是小鲸鱼的东西（2026-10-27 全线隔离）。
+      // 按 key 判断：群聊角色是宠物时跳过，私聊小鲸鱼照常。
+      if (isPlayingRole(key)) return;
       if (isConversationBusyV2(key, getSocialV2State(key))) {
         log(`[说说] 有新评论，但 ${key} 正忙 —— 通知留着，下一轮再叫`);
         return;
@@ -1551,8 +1555,9 @@ async function main() {
     // onWakeDelivered 在投递后清空待分享池：同一条视频不反复提（投递失败也清，最多丢一次分享机会）。
     onWake: async () => {
       // 角色扮演（宠物等）期间不自刷 B 站：学习和看视频是"小鲸鱼"的功能（2026-10-27 隔离）。
-      if (isPlayingRole()) return;
-      await sendWakePromptV2(String(cfg.biliScroll?.groupKey || 'group:20000001'), 'biliScroll');
+      const scrollKey = String(cfg.biliScroll?.groupKey || 'group:20000001');
+      if (isPlayingRole(scrollKey)) return;
+      await sendWakePromptV2(scrollKey, 'biliScroll');
       biliScrollMod.onWakeDelivered();
     },
   });

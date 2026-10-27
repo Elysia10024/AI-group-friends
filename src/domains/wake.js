@@ -73,7 +73,7 @@ export function createWakeModule(ctx) {
   function buildWakePromptV2(key, reason) {
     // 组装 ctx：I/O、时钟、副作用全留在这里；纯渲染在 src/core/prompt.js（有 45 条单测）。
     // 原来这个函数是 134 行的 13 段字符串相加，现在只剩"取数据 + 交给纯函数"。
-    const roleState = readRoleState();
+    const roleState = readRoleState(key);
     const selfAliases = [...selfAliasesFor(groupIdFromKey(key))].filter(Boolean);
     const st = getSocialV2State(key);
     const memoryText = formatMemoryV2(st, key);
@@ -131,7 +131,7 @@ export function createWakeModule(ctx) {
   }
 
   function buildWakeReminderPromptV2(key) {
-    const roleState = readRoleState();
+    const roleState = readRoleState(key);
     const roleLine = roleState.role ? `【当前角色】${roleState.role}（完整角色卡请调用 qq_get_prompt 查看）\n\n` : '';
     const st = getSocialV2State(key);
     const tokenLine = `【会话令牌】${st.agentToken}（调用二代状态工具时请在参数中带上此令牌）\n\n`;
@@ -148,7 +148,7 @@ export function createWakeModule(ctx) {
     if (ctx.currentMode !== 'reserved2' || socialV2.paused) return;
     // 角色扮演期间只响应点名/私聊（防止其它路径绕过 scheduleWakeV2 的过滤直接叫醒）。
     {
-      const roleNow = String((typeof readRoleState === 'function' ? readRoleState()?.role : '') ?? '').trim();
+      const roleNow = String((typeof readRoleState === 'function' ? readRoleState(key)?.role : '') ?? '').trim();
       if (roleNow && roleNow !== '小鲸鱼') {
         const base = String(reason ?? '').split(':')[0];
         if (!['atMention', 'nameMention', 'private'].includes(base)) {
@@ -160,7 +160,7 @@ export function createWakeModule(ctx) {
     // 静默模式（「关闭聊天功能」）时群聊**连叫醒都停**：既不发话（send 闸门也拦），
     // 也不该让 DSH 白跑一轮 turn —— 那会照常烧 token（她在想，只是发不出去）。
     // **私聊照常叫醒**（判定见 src/core/mute.js）。
-    if (isChatMuted(readRoleState().mode, key)) {
+    if (isChatMuted(readRoleState(key).mode, key)) {
       log(`[reserved2] 跳过唤醒 ${key}（${reason}）：静默模式（关闭聊天功能）只对群聊生效`);
       return;
     }
@@ -374,7 +374,7 @@ export function createWakeModule(ctx) {
     // densityWake 凑热闹、proactiveCheck 没话找话、probability/question、followUp、timeout、bootstrap
     // 一律不叫。2026-10-27 用户要求：机械应答，只被叫才回。
     // （poke 在 pending.js 就被固定应答「在呢」拦下，到不了这里；redPacket 也不叫。）
-    const roleNow = String((typeof readRoleState === 'function' ? readRoleState()?.role : '') ?? '').trim();
+    const roleNow = String((typeof readRoleState === 'function' ? readRoleState(key)?.role : '') ?? '').trim();
     if (roleNow && roleNow !== '小鲸鱼') {
       const base = String(reason ?? '').split(':')[0];
       if (!['atMention', 'nameMention', 'private'].includes(base)) {

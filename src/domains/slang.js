@@ -353,7 +353,7 @@ export function createSlangModule(ctx) {
     if (!ctx.dshReady) return;
     // 角色扮演（宠物等非小鲸鱼角色）期间不学黑话：学到的词进的是小鲸鱼的库，
     // 宠物在群里聊的内容不该被当成"小鲸鱼的语料"（2026-10-27 全线隔离）。
-    const roleNow = String((typeof readRoleState === 'function' ? readRoleState()?.role : '') ?? '').trim();
+    const roleNow = String((typeof readRoleState === 'function' ? readRoleState(key)?.role : '') ?? '').trim();
     if (roleNow && roleNow !== '小鲸鱼') return;
     const cooldown = Number(cfg.slang?.extractCooldownMs ?? 300000);
     const last = slangExtractionCooldowns.get(key) ?? 0;

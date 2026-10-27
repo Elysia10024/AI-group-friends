@@ -51,10 +51,10 @@ export async function handleMemory1(ctx) {
   /** 拼绝对路径：记忆文件在 state/memory/ 下（每个会话一个）。 */
   const joinRoot = (...p) => p.reduce((a, b) => path.join(a, b), ROOT);
 
-  /** 当前是不是在扮演别人（≠ 小鲸鱼）。扮演期间记忆读写都要特殊处理。 */
-  const roleplayName = () => {
+  /** 当前是不是在扮演别人（≠ 小鲸鱼）。扮演期间记忆读写都要特殊处理。按会话 key 判断（群宠物/私聊小鲸鱼）。 */
+  const roleplayName = (key) => {
     try {
-      const rs = typeof readRoleState === 'function' ? readRoleState() : null;
+      const rs = typeof readRoleState === 'function' ? readRoleState(key) : null;
       const r = String(rs?.role ?? '').trim();
       return r && r !== '小鲸鱼' ? r : '';
     } catch { return ''; }
@@ -175,7 +175,7 @@ export async function handleMemory1(ctx) {
       const st = getSocialV2State(key);
       // 角色扮演期间（当前角色 ≠ 小鲸鱼）：记忆一律打 [扮演:角色] 标签，而且不碰真实的
       // 关系 / 标签 / 心情——那些是那个角色说的话，不是小鲸鱼的（2026-10-19 主人要求，防污染）。
-      const playingRole = roleplayName();
+      const playingRole = roleplayName(key);
       if (category === 'mood') {
         if (playingRole) {
           sendJson({ ok: false, roleplay: true, error: `角色扮演期间不改心情（那是「${playingRole}」的，不是小鲸鱼的），这条没写。` });
@@ -365,7 +365,7 @@ export async function handleMemory1(ctx) {
       if (req.headers['x-agent-token'] && !v2ToolEnabled('memory')) { sendJson({ ok: false, error: '工具未启用：qq_memory_query' }, 403); return true; }
       const st = getSocialV2State(key);
       // 角色扮演期间：别的会话的记忆也不给她查（本会话的记忆在进入扮演时已被清空）。
-      if (roleplayName() && String(url.searchParams.get('scope') ?? '') === 'all') {
+      if (roleplayName(key) && String(url.searchParams.get('scope') ?? '') === 'all') {
         sendJson({
           ok: true, key, roleplay: true, formatted: '',
           raw: { activeTopics: [], pendingThoughts: [], memberImpressions: {} },
