@@ -80,6 +80,7 @@ import { relationTagOf } from './core/msg-line.js';
 import { createSocialFlowModule } from './domains/social-flow.js';
 import { createSocialLoopModule } from './domains/social-loop.js';
 import { createRoleReplyModule } from './domains/role-reply.js';
+import { createPokeGuard } from './core/poke-guard.js';
 import { createContextShadowModule } from './domains/context-shadow.js';
 import { createSocialLogModule } from './domains/social-log.js';
 import { createSessionModule } from './domains/session.js';
@@ -1259,6 +1260,8 @@ async function main() {
     drainAllPromptQueues,
   } = timersMod;
   loadSocialV2State();
+  // 连续戳守卫（2026-10-28 防御方案）：默认 5 分钟窗口内第 3 次触发；观察后再调
+  const pokeGuard = createPokeGuard();
   const incomingMod = createIncomingModule({
     DIRECTION_HINT,
     registry,
@@ -1280,6 +1283,7 @@ async function main() {
     // 挂起请求域已搬到 src/domains/pending.js，构造点在下面 —— 比这里晚。
     // 直接写裸名字会在构造时求值 → TDZ，所以包一层 thunk，把查表推迟到调用时。
     cancelPendingEntry: (...a) => cancelPendingEntry(...a),
+    pokeGuard,
     cancelSocialTimers,
     clearSocialV2Timers,
     collectors,
@@ -1352,6 +1356,7 @@ async function main() {
     handleIncoming,
   } = incomingMod;
   const pendingMod = createPendingModule({
+    pokeGuard,
     APPROVE_WORDS,
     REJECT_WORDS,
     api,

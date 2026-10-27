@@ -25,6 +25,7 @@ export function createPendingModule(ctx) {
     log,
     modeAllowed,
     pending,
+    pokeGuard,
     readRoleState,
     resolveGroupMemberName,
     saveSocialV2State,
@@ -184,6 +185,16 @@ export function createPendingModule(ctx) {
     if (targetIsSelf && roleNow && roleNow !== '小鲸鱼') {
       try { await sendToQQ(key, '在呢'); } catch (e) { log(`拍一拍固定应答失败 ${key}: ${e?.message ?? e}`); }
       return;
+    }
+    // 连续戳（只戳不说话）：5 分钟窗口内第 3 次起，固定回「在呢」并跳过模型唤醒（2026-10-28 防御方案）。
+    // 文字消息进来会 reset（incoming.js）；阈值/窗口见 bridge 里的 createPokeGuard 参数。
+    if (targetIsSelf && pokeGuard) {
+      const { count, trigger } = pokeGuard.note(key);
+      if (trigger) {
+        appendActivity(`${key} 连续戳 ${count} 次，固定应答「在呢」（不叫模型）`);
+        try { await sendToQQ(key, '在呢'); } catch (e) { log(`连续戳固定应答失败 ${key}: ${e?.message ?? e}`); }
+        return;
+      }
     }
     if (ctx.flags.currentMode !== 'reserved2') return;
     if (socialV2.paused) return;

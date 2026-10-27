@@ -65,6 +65,7 @@ export function createIncomingModule(ctx) {
     noteGroupDensityMessage,
     path,
     pending,
+    pokeGuard,
     pendingSendToolCalls,
     pendingWakeKeys,
     queued,
@@ -106,6 +107,8 @@ export function createIncomingModule(ctx) {
   // QQ 消息 → DSH prompt
   async function handleIncoming(kind, id, event, cfg) {
     const key = convKey(kind, id);
+    // 有人在这个会话里说话了：连续戳计数清零（有人在说话，就不是「只戳不说话」了）
+    if (pokeGuard) pokeGuard.reset(key);
     // ── 接管模式（2026-10-22 主人后门）：主人私聊的暗号和消息不进她的会话 ──
     // 「妈妈接管」= 打开接管（之后主人私聊消息交给 mom-bot → headless 的我处理）；
     // 「妈妈下线」= 关闭接管。群和其他人的私聊完全不受影响。

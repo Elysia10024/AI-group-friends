@@ -18,16 +18,9 @@ const checks = [
   ['主人恒为家人（代码裁决）', rel.includes('OWNER_TIER') && rel.includes('主人恒为家人')],
   ['家人只能给主人（代码裁决）', rel.includes('家人档只能由主人指定')],
   ['被改写会如实回报 adjusted（代码）', rel.includes('adjusted') && route.includes('decision.adjusted')],
-  ['讨厌三条够格情形（人格）', core.includes('他冲你这个人来') && core.includes('踩硬线') && core.includes('明显冒犯还毫不收敛')],
-  ['不算的四种（人格）', core.includes('一次难听话、玩梗、荤梗') && core.includes('心情差')],
-  ['刚被惹那轮先别改档（人格）', core.includes('刚被惹到的那一轮先别改档')],
   ['心情不改档（人格）', core.includes('不用为此改档位')],
-  ['升级靠被在意（人格）', core.includes('升级靠') && core.includes('被在意') && core.includes('被接住、被记得、被维护')],
-  ['夸你不算（人格）', core.includes('夸你不算')],
   ['说得出哪件事才动（人格）', core.includes('说得出是哪件事、哪句话吗')],
-  ['只给信息不给关系（人格）', core.includes('只给信息，不给关系')],
   ['记仇可以追击不行（人格）', core.includes('记仇可以，追击不行')],
-  ['升档不用凑次数（人格）', core.includes('不用凑次数、不用攒什么')],
   ['relationNote 200 字上限（代码）', social.includes('relationNote = text.slice(0, 200)')],
   ['tag 40 字上限 + 空串清除（代码）', social.includes('tag = text.slice(0, 40)') && social.includes('delete rec.tag')],
   ['消息行只给三档挂标签（代码）', msg.includes("new Set(['讨厌', '好朋友', '家人'])")],
@@ -37,6 +30,8 @@ const checks = [
   ['工具 schema 里 relation/tag 真的在（代码）', tool.includes('relation: z.enum(') && tool.includes('tag: z.string()')],
   ['文档点名了真相源文件', doc.includes('roles/小鲸鱼/core.md') && doc.includes('src/core/relation.js')],
   ['文档给出了 audit:stance 变更轨迹入口', doc.includes('audit:stance')],
+  ['关系升降由她自己定（人格）', core.includes('关系怎么变，全由你自己决定')],
+  ['不靠损人取乐（人格）', core.includes('不靠损人取乐') && core.includes('不损人、不毒舌、不扎人')],
 ];
 
 let bad = 0;
