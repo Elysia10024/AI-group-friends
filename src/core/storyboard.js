@@ -1,5 +1,7 @@
 // 「分镜图」的纯逻辑：从场景切点里挑 9–16 格、格式化时间戳、把字幕/响度压成文字摘要。
-// 2026-10-28 方案：借鉴 dsh-video-storyboard（一张图 + 时间戳 + 转录/音频摘要），
+// 归属：分镜模式的**设计**借鉴自 dsh-video-storyboard
+// （https://github.com/SAOS-3624/dsh-video-storyboard ，MIT License，版权归其作者）。
+// 本文件为独立实现，未复制其代码，只借鉴「9–16 格 + 每格时间戳 + 转录/音频摘要 + 一张图」的输出格式。
 // 用 ffmpeg 自己实现，不装 DSH 插件（内核冻结 0.1.1）。
 //
 // 纯函数、零 I/O：ffmpeg 调用在 domains/bili-look.js，这里只做能单测的决策。

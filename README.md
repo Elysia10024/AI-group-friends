@@ -15,6 +15,11 @@ QQ 消息 ──► SnowLuma（OneBot v11 WS）──► 本桥接进程 ──�
                                                 └── agent 回复/提问/审批 ┘
 ```
 
+## 来源、许可与致谢
+
+本项目**派生自 [qq-bridge](https://github.com/Derpyu520/qq-bridge)**（上游版权归 Derpyu520 及 qq-bridge / QSH contributors），按 **MIT License** 发布——见 [LICENSE](LICENSE)。
+
+借鉴、依赖的第三方项目与致谢清单见 **[THIRD_PARTY.md](THIRD_PARTY.md)**（包括视频「分镜图」设计的来源）。只借鉴思路/公开文档的部分均已注明，未复制未授权代码。
 ## 项目展示
 
 📽️ [AI 仿真群友 - 项目介绍视频](assets/project-intro.mp4)

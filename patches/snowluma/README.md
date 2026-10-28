@@ -84,3 +84,7 @@ SnowLuma 是第三方 bundle，改它是**唯一**能拿到红包原始字节的
 `redbag-decode.py` 是项目里最后一个 Python 脚本。它打印中文时会乱码
 （Python 的 stdout 在 Windows 上是 GBK，而 harness 按 UTF-8 解码），
 但只影响日志可读性、不影响功能。抽空可以改写成 Node（见 `docs/重构方案.md` R0.5）。
+
+## 许可与归属
+
+SnowLuma 是**第三方项目**（许可条款见其发布页）；本目录下的补丁是**本项目原创**，仅用于本地部署时修补第三方程序，**不随本仓库分发 SnowLuma 本体**。完整第三方清单见仓库根目录 `THIRD_PARTY.md`。
