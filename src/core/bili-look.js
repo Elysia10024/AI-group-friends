@@ -11,10 +11,13 @@ export const BILI_LOOK_DEFAULTS = {
   ownerBypass: true,
   // 评论只看前 5 条，按热度排序（2026-10-23 用户定）。
   maxComments: 5,
-  // 抽帧看画面：只看 5 分钟以内的视频，每 2 秒一帧，最多 150 张。
+  // 抽帧看画面：只看 5 分钟以内的视频，**每秒一帧**，最多 300 张（5 分钟 × 1 秒）。
+  // 2026-10-28 用户要求从每 2 秒改成每秒一张；300 帧按 5×4 拼成 15 张图，仍在 DSH 单次 20 张图上限内。
   withFrames: true,
-  frameIntervalSec: 2,
-  maxFrames: 150,
+  // 画面模式：'storyboard' = 一张分镜图（9-16 格，省 10-15 倍）；'frames' = 逐秒抽帧（细看）。
+  mode: 'storyboard',
+  frameIntervalSec: 1,
+  maxFrames: 300,
   maxDurationSec: 300,
   pythonPath: '<外部工具目录>\\bili-videoread\\.venv\\Scripts\\python.exe',
   ffmpegPath: '<外部工具目录>\\bili-videoread\\.venv\\lib\\site-packages\\imageio_ffmpeg\\binaries\\ffmpeg-win-x86_64-v7.1.exe',

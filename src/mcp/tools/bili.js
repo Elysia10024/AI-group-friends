@@ -5,18 +5,19 @@ import { z } from 'zod';
 export function registerBiliTools(server, { agentApi }) {
   server.tool(
     'qq_bili_look',
-    '看群里有人分享过的 B 站视频：返回标题、简介、按热度前 5 条评论，并抽帧看画面（只看 5 分钟以内，每 2 秒一张，最多 150 张）。**每个群友每天只能让你看一次**：同一个人当天第二次分享会被直接拒绝；被拒就照实说明，不要绕。看完会自动把内容记进「看过的视频」笔记；**如果视频里有要记住的规则/注意事项/知识点，看完立刻用 qq_memory_append 记下来**——不记下一轮就忘了。',
+    '看群里有人分享过的 B 站视频：返回标题、简介、按热度前 5 条评论，并看画面（只看 5 分钟以内）。默认返回**一张分镜图**（9–16 格、每格左上角标时间戳，省 10 倍 token）+ 字幕/响度摘要；要看某段细节再用 qq_bili_zoom。mode=frames 才会逐秒抽帧（更贵）。**每个群友每天只能让你看一次**：同一个人当天第二次分享会被直接拒绝；被拒就照实说明，不要绕。看完会自动把内容记进「看过的视频」笔记；**如果视频里有要记住的规则/注意事项/知识点，看完立刻用 qq_memory_append 记下来**——不记下一轮就忘了。',
     {
       key: z.string().describe('会话 key，格式 group:群号 或 private:QQ号'),
       url: z.string().describe('B 站视频链接或 BV 号（必须是群里/私聊里有人发过的）'),
       token: z.string().describe('会话令牌（**必填**，漏传会被拒；见唤醒提示中的【会话令牌】）'),
-      withFrames: z.boolean().optional().describe('是否抽帧看画面，默认 true；false 只回文字（不看画面）')
+      withFrames: z.boolean().optional().describe('是否抽帧看画面，默认 true；false 只回文字（不看画面）'),
+      mode: z.enum(['storyboard', 'frames']).optional().describe('画面模式：storyboard=一张分镜图（默认，9-16 格+时间戳，省 token）；frames=逐秒拼图（细看，贵）')
     },
-    async ({ key, url, token, withFrames }) => {
+    async ({ key, url, token, withFrames, mode }) => {
       try {
         const data = await agentApi('/api/socialV2/bili-look', {
           method: 'POST',
-          body: JSON.stringify({ key, url, withFrames }),
+          body: JSON.stringify({ key, url, withFrames, mode }),
           headers: { 'x-agent-token': token },
           timeoutMs: 240000
         });
@@ -34,8 +35,38 @@ export function registerBiliTools(server, { agentApi }) {
   );
 
   server.tool(
+    'qq_bili_zoom',
+    '看一个 B 站视频里某段时间的细节：给 startSec/endSec（秒），返回 2–4 帧拼图（每格左上角时间戳）。用在「分镜图看不清某段」「想确认第 30 秒左右在干嘛」的时候；只支持 5 分钟以内的视频。',
+    {
+      key: z.string().describe('会话 key，格式 group:群号 或 private:QQ号'),
+      url: z.string().describe('B 站视频链接或 BV 号（必须是群里/私聊里有人发过的）'),
+      token: z.string().describe('会话令牌（**必填**，漏传会被拒；见唤醒提示中的【会话令牌】）'),
+      startSec: z.number().describe('起始秒'),
+      endSec: z.number().describe('结束秒（窗口最长 60 秒）')
+    },
+    async ({ key, url, token, startSec, endSec }) => {
+      try {
+        const data = await agentApi('/api/socialV2/bili-zoom', {
+          method: 'POST',
+          body: JSON.stringify({ key, url, startSec, endSec }),
+          headers: { 'x-agent-token': token },
+          timeoutMs: 240000
+        });
+        const images = Array.isArray(data?.images) ? data.images : [];
+        return {
+          content: [
+            { type: 'text', text: data?.text ?? JSON.stringify(data) },
+            ...images.map((img) => ({ type: 'image', data: String(img.data), mimeType: String(img.mimeType || 'image/jpeg') }))
+          ]
+        };
+      } catch (error) {
+        return { content: [{ type: 'text', text: `细看失败：${error?.message ?? error}` }], isError: true };
+      }
+    }
+  );
+  server.tool(
     'qq_bili_scroll',
-    '空闲时间自己刷 B 站：挑一个 5 分钟以内的热门短视频看（标题/简介/热度前 5 评论 + 每 2 秒一张截图）。只在空闲时段可用，每小时最多一次，每天有上限。看完会自动把这条视频的标题/简介/热评选进你的「看过的视频」笔记（以后能想起来）；想留自己的想法用 qq_memory_append 另记。',
+    '空闲时间自己刷 B 站：挑一个 5 分钟以内的热门短视频看（标题/简介/热度前 5 评论 + 每秒一张截图）。只在空闲时段可用，每小时最多一次，每天有上限。看完会自动把这条视频的标题/简介/热评选进你的「看过的视频」笔记（以后能想起来）；想留自己的想法用 qq_memory_append 另记。',
     {
       key: z.string().describe('会话 key，格式 group:群号 或 private:QQ号'),
       token: z.string().describe('会话令牌（**必填**，漏传会被拒；见唤醒提示中的【会话令牌】）')

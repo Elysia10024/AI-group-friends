@@ -191,12 +191,13 @@
 | POST | `/api/bilibili/targets/remove` | src/console/routes/bilibili.js:41 |
 | POST | `/api/bilibili/check` | src/console/routes/bilibili.js:42 |
 
-## handleBiliLook（2 条）
+## handleBiliLook（3 条）
 
 | 方法 | 路径 | 文件:行 |
 |---|---|---|
 | GET | `/api/bili-look/status` | src/console/routes/bili-look.js:10 |
-| POST（排除式） | `/api/socialV2/bili-look` | src/console/routes/bili-look.js:31 |
+| GET | `/api/socialV2/bili-look` | src/console/routes/bili-look.js:34 |
+| GET | `/api/socialV2/bili-zoom` | src/console/routes/bili-look.js:55 |
 
 ## handleBiliScroll（1 条）
 
@@ -238,4 +239,4 @@
 | POST | `/api/workspace/reset` | src/console/routes/admin.js:765 |
 | POST | `/api/restart` | src/console/routes/admin.js:823 |
 
-总计：25 个 handler、109 条路由。
+总计：25 个 handler、110 条路由。

@@ -28,22 +28,44 @@ export async function handleBiliLook(ctx) {
     return true;
   }
 
-  if (req.method !== 'POST' || url.pathname !== '/api/socialV2/bili-look') return false;
+  if (req.method !== 'POST') return false;
+  if (url.pathname !== '/api/socialV2/bili-look' && url.pathname !== '/api/socialV2/bili-zoom') return false;
 
-  const body = await readBody();
-  const key = String(body.key ?? '').trim();
-  const token = String(req.headers['x-agent-token'] ?? '');
-  if (!key) { sendJson({ ok: false, error: 'key 不能为空' }, 400); return true; }
-  if (!token) { sendJson({ ok: false, error: '缺 agent token' }, 403); return true; }
-  if (!agentTokenOk(key, token)) { sendJson({ ok: false, error: 'agent token 无效' }, 403); return true; }
-  if (!v2SessionAllowed(key)) { sendJson({ ok: false, error: '目标不在当前模式允许范围内' }, 403); return true; }
+  if (url.pathname === '/api/socialV2/bili-look') {
+    const body = await readBody();
+    const key = String(body.key ?? '').trim();
+    const token = String(req.headers['x-agent-token'] ?? '');
+    if (!key) { sendJson({ ok: false, error: 'key 不能为空' }, 400); return true; }
+    if (!token) { sendJson({ ok: false, error: '缺 agent token' }, 403); return true; }
+    if (!agentTokenOk(key, token)) { sendJson({ ok: false, error: 'agent token 无效' }, 403); return true; }
+    if (!v2SessionAllowed(key)) { sendJson({ ok: false, error: '目标不在当前模式允许范围内' }, 403); return true; }
 
-  try {
-    const withFrames = body.withFrames === undefined ? null : body.withFrames === true;
-    const out = await biliLook.look(key, String(body.url ?? ''), { withFrames });
-    sendJson({ ok: true, ...out });
-  } catch (error) {
-    sendJson({ ok: false, error: String(error?.message ?? error) }, 400);
+    try {
+      const withFrames = body.withFrames === undefined ? null : body.withFrames === true;
+      const mode = body.mode === 'frames' || body.mode === 'storyboard' ? body.mode : null;
+      const out = await biliLook.look(key, String(body.url ?? ''), { withFrames, mode });
+      sendJson({ ok: true, ...out });
+    } catch (error) {
+      sendJson({ ok: false, error: String(error?.message ?? error) }, 400);
+    }
+    return true;
   }
-  return true;
+
+  // 细看：给一个时间窗，返回 2-4 帧拼图（分镜省钱，zoom 按需花）
+  if (url.pathname === '/api/socialV2/bili-zoom') {
+    const bodyZ = await readBody();
+    const keyZ = String(bodyZ.key ?? '').trim();
+    const tokenZ = String(req.headers['x-agent-token'] ?? '');
+    if (!keyZ) { sendJson({ ok: false, error: 'key 不能为空' }, 400); return true; }
+    if (!tokenZ) { sendJson({ ok: false, error: '缺 agent token' }, 403); return true; }
+    if (!agentTokenOk(keyZ, tokenZ)) { sendJson({ ok: false, error: 'agent token 无效' }, 403); return true; }
+    if (!v2SessionAllowed(keyZ)) { sendJson({ ok: false, error: '目标不在当前模式允许范围内' }, 403); return true; }
+    try {
+      const outZ = await biliLook.zoom(String(bodyZ.url ?? ''), Number(bodyZ.startSec) || 0, Number(bodyZ.endSec) || (Number(bodyZ.startSec) || 0) + 10);
+      sendJson({ ok: true, ...outZ });
+    } catch (error) {
+      sendJson({ ok: false, error: String(error?.message ?? error) }, 400);
+    }
+    return true;
+  }
 }
