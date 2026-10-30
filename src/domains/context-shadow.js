@@ -204,7 +204,25 @@ export function createContextShadowModule(ctx) {
           return lines.length ? `【你和他们的关系】\n${lines.join('\n')}` : '';
         } catch { return ''; }
       })(),
-      roleplay ? '' : fmtForeignPersons(st, key),
+      // 同一个人、不同叫法：当前会话出现的人若在其他会话有别的名字，显式说明是同一人（2026-10-30 主人要求）。
+      roleplay ? '' : (() => {
+        try {
+          const people2 = getPeople() ?? {};
+          const ids = new Set((Array.isArray(st?.recentMessages) ? st.recentMessages : []).map((m) => String(m?.userId ?? m?.sender?.user_id ?? '')).filter(Boolean));
+          const lines = [];
+          for (const qq of ids) {
+            const names = people2[qq]?.names ?? {};
+            const uniq = [...new Set(Object.values(names).map((x) => String(x ?? '').trim()).filter(Boolean))];
+            if (uniq.length < 2) continue;
+            const curName = String(names[key] ?? '');
+            const others = uniq.filter((n) => n !== curName).slice(0, 2);
+            if (!others.length) continue;
+            lines.push(`- ${curName || uniq[0]}：在别处也叫 ${others.map((n) => `「${n}」`).join('、')}——**同一个人**，别当成两个人`);
+            if (lines.length >= 4) break;
+          }
+          return lines.length ? `【同一个人，不同叫法】\n${lines.join('\n')}` : '';
+        } catch { return ''; }
+      })(),      roleplay ? '' : fmtForeignPersons(st, key),
       // 表达方式（「场景 → 怎么说」）：只给这个群确认过的，最多 3 条；扮演期间不给。
       roleplay ? '' : getExpressionBlock(key),
       // 她的活动公共日志（最近 5 条）：刷视频/发图/说过的话，跨会话可见，昵称做代号脱敏。
