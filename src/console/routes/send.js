@@ -38,7 +38,8 @@ export async function handleSendCore(ctx) {
     rateLimitCheck,
     readBody,
     recentLimitOf,
-    recordSentMessagesV2,
+    recordActivity,
+  recordSentMessagesV2,
     redactSensitiveText,
     req,
     reserveSlots,
@@ -245,6 +246,8 @@ export async function handleSendCore(ctx) {
         saveSocialV2State();
         log(`[reserved2] 工具统一发送 ${key}: 成功 ${sentMessages.length}/${messages.length} 条`);
         appendActivity(`${key} [reserved2] 工具统一发送：成功 ${sentMessages.length}/${messages.length} 条`);
+      // 公共活动日志：她发过什么（文字/图），跨会话可见，材料里会带（2026-10-30 主人要求）
+      try { for (const sm of sentMessages) recordActivity?.({ kind: /\[图片\]|\[表情\]/.test(String(sm?.text ?? '')), text: String(sm?.text ?? ''), key, at: now }); } catch { }
         if (sentMessages.length > 0) scheduleReplyCheckV2(key);
         const burstHint = messages.length >= 3 ? '你已经连发了多条，确认是必要的吗？真人很少一口气补完。' : undefined;
         const spaceWarn = findCjkSpaceWarning(messages);

@@ -20,7 +20,8 @@ import { buildPeopleIndex, crossGroupAliasLines } from '../core/people-index.js'
 import { moodLine } from '../core/mood.js';
 import { relationLines } from '../core/relation.js';
 import { renderMomBlock } from '../core/mom-channel.js';
-import { pickCrossEntries, formatCrossBlock } from '../core/cross-memory.js';
+import { pickCrossEntries, formatCrossBlock, redactText } from '../core/cross-memory.js';
+import { formatActivityBlock } from '../core/whale-activity.js';
 
 import { readStateFile, stamp } from '../core/state-schema.js';
 
@@ -46,6 +47,7 @@ export function createContextShadowModule(ctx) {
     log,
     readJsonSafe,
     recentBiliNotes = () => [],
+    recentActivity = () => [],
     flags,
   } = ctx;
 
@@ -205,7 +207,16 @@ export function createContextShadowModule(ctx) {
       roleplay ? '' : fmtForeignPersons(st, key),
       // 表达方式（「场景 → 怎么说」）：只给这个群确认过的，最多 3 条；扮演期间不给。
       roleplay ? '' : getExpressionBlock(key),
-      // 图库清单是小鲸鱼的东西：扮演期间不给她看（宠物连发图工具都没有，2026-10-27 隔离）。
+      // 她的活动公共日志（最近 5 条）：刷视频/发图/说过的话，跨会话可见，昵称做代号脱敏。
+      roleplay ? '' : (() => {
+        try {
+          const acts = recentActivity(5);
+          if (!Array.isArray(acts) || !acts.length) return '';
+          const peopleNow2 = getPeople() ?? {};
+          const aliases2 = Object.fromEntries(Object.entries(peopleNow2).filter(([, r]) => r?.codeName).map(([q, r]) => [q, String(r.codeName)]));
+          return formatActivityBlock(acts.map((a) => ({ ...a, text: redactText(a.text, { people: peopleNow2, aliases: aliases2 }) })), { limit: 5 });
+        } catch { return ''; }
+      })(),      // 图库清单是小鲸鱼的东西：扮演期间不给她看（宠物连发图工具都没有，2026-10-27 隔离）。
       roleplay ? '' : imageLibraryIndexText(),
       // 她最近看过的视频（自刷 + 群友分享）：2026-10-30 主人发现"问她刷过什么视频，她说没刷过"——
       // 记录在 state/bili-notes.json 但材料里没带，她看不见自己刷过什么。这里补最近 5 条。

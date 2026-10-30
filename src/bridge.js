@@ -100,6 +100,7 @@ import { createPromptQueueModule } from './domains/prompt-queue.js';
 import { createBilibiliModule } from './domains/bilibili.js';
 import { createBiliLookModule } from './domains/bili-look.js';
 import { createBiliScrollModule } from './domains/bili-scroll.js';
+import { createWhaleActivityModule } from './domains/whale-activity.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
@@ -841,6 +842,9 @@ async function main() {
     setPersonTag,
     reloadMemory,
   } = socialStateMod;
+  // 她的活动公共日志（2026-10-30 主人要求）：刷视频/发图/说话统一记到 state/whale-activity.json，
+  // 跨会话共享——换群/私聊不能"失忆"。
+  const whaleActivityMod = createWhaleActivityModule({ stateDir: STATE_DIR, readJsonSafe, atomicWriteJson });
   // A1.0 影子组装（只读旁路）：照常走长会话，另外留一份"新方案会给她看什么"。
   // 设计见 docs/上下文组装设计.md；开关在 cfg.socialV2.context.assembler。
   // **必须在 socialStateMod 之后构造**（要它的 getSocialV2State/formatMemoryV2，
@@ -888,6 +892,8 @@ async function main() {
     imageLibraryIndexText,
     // 她最近看过的视频（自刷 + 分享）：懒引用 biliScrollMod（它在下面才构造），材料里补"你最近看过的视频"块。
     recentBiliNotes: (n) => (typeof biliScrollMod !== 'undefined' && biliScrollMod ? biliScrollMod.recentNotes(n) : []),
+    // 她的活动公共日志（最近 N 条，跨会话）。
+    recentActivity: (n) => whaleActivityMod.recent(n),
     log,
     readJsonSafe,
   });
