@@ -20,6 +20,7 @@ import { buildPeopleIndex, crossGroupAliasLines } from '../core/people-index.js'
 import { moodLine } from '../core/mood.js';
 import { relationLines } from '../core/relation.js';
 import { renderMomBlock } from '../core/mom-channel.js';
+import { pickCrossEntries, formatCrossBlock } from '../core/cross-memory.js';
 
 import { readStateFile, stamp } from '../core/state-schema.js';
 
@@ -221,7 +222,7 @@ export function createContextShadowModule(ctx) {
       // 以前只有预设里那份"小抄"每轮在，人格卡要她自己去 qq_get_prompt 拉，实测经常整轮不拉。
       role: getRoleCore(key),
       facts,
-      memory: roleplay ? '' : formatMemoryV2(st, key),
+      memory: roleplay ? '' : [formatMemoryV2(st, key), (() => { try { const cm = cfg.socialV2?.crossMemory ?? {}; if (cm.enabled === false) return ''; const recentText = (Array.isArray(st?.recentMessages) ? st.recentMessages : []).map((m) => String(m?.plain ?? m?.text ?? '')).join(' '); const peopleNow = getPeople() ?? {}; const aliases = Object.fromEntries(Object.entries(peopleNow).filter(([, r]) => r?.codeName).map(([q, r]) => [q, String(r.codeName)])); const others = getOtherConversations(key); const traits = (Array.isArray(others) ? others : []).flatMap((s) => Object.entries(s?.memberImpressions ?? {}).flatMap(([q, im]) => (Array.isArray(im?.traits) ? im.traits : []).map((text, i) => ({ qq: q, text, at: Number(im?.traitMeta?.[i]?.lastAt) || 0 })))); return formatCrossBlock(pickCrossEntries({ currentKey: key, snapshots: others, traits, people: peopleNow, aliases, max: Math.max(1, Math.min(6, Number(cm.max) || 4)), maxChars: Math.max(60, Math.min(600, Number(cm.maxChars) || 240)), recentText })); } catch { return ''; } })()].filter(Boolean).join('\n\n'),
       // 黑话表也是小鲸鱼的：扮演期间不给看（宠物不需要懂"烧货/大隐鲸"这些梗，2026-10-27 隔离）。
       slang: roleplay ? '' : buildSlangContext(flags.slangEntries, cfg.slang?.injectMax ?? 8, slangHaystack),
       status: fmtStatus(st, key),

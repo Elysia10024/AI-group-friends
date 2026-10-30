@@ -36,7 +36,7 @@
 | POST | `/api/slang/batch-confirm` | src/console/routes/slang.js:298 |
 | POST | `/api/slang/batch-reject` | src/console/routes/slang.js:324 |
 
-## handleAdminConfigSecurity（14 条）
+## handleAdminConfigSecurity（16 条）
 
 | 方法 | 路径 | 文件:行 |
 |---|---|---|
@@ -47,13 +47,15 @@
 | GET | `/api/socialV2/config` | src/console/routes/admin.js:285 |
 | POST | `/api/console/notify-ai` | src/console/routes/admin.js:293 |
 | POST | `/api/test-send` | src/console/routes/admin.js:366 |
-| POST | `/api/security` | src/console/routes/admin.js:395 |
-| GET | `/api/security` | src/console/routes/admin.js:413 |
-| POST | `/api/whitelist` | src/console/routes/admin.js:421 |
-| GET | `/api/whitelist` | src/console/routes/admin.js:460 |
-| GET | `/api/pending` | src/console/routes/admin.js:468 |
-| GET | `/api/sessions` | src/console/routes/admin.js:486 |
-| POST | `/api/console/token` | src/console/routes/admin.js:499 |
+| GET | `/api/group-admins` | src/console/routes/admin.js:396 |
+| POST | `/api/group-admins` | src/console/routes/admin.js:400 |
+| POST | `/api/security` | src/console/routes/admin.js:428 |
+| GET | `/api/security` | src/console/routes/admin.js:446 |
+| POST | `/api/whitelist` | src/console/routes/admin.js:454 |
+| GET | `/api/whitelist` | src/console/routes/admin.js:493 |
+| GET | `/api/pending` | src/console/routes/admin.js:501 |
+| GET | `/api/sessions` | src/console/routes/admin.js:519 |
+| POST | `/api/console/token` | src/console/routes/admin.js:532 |
 
 ## handleSocialV2ReadWrite（7 条）
 
@@ -71,8 +73,8 @@
 
 | 方法 | 路径 | 文件:行 |
 |---|---|---|
-| GET | `/api/socialV2/states` | src/console/routes/admin.js:561 |
-| POST | `/api/socialV2/wake` | src/console/routes/admin.js:581 |
+| GET | `/api/socialV2/states` | src/console/routes/admin.js:594 |
+| POST | `/api/socialV2/wake` | src/console/routes/admin.js:614 |
 
 ## handleSendCore（3 条）
 
@@ -161,12 +163,12 @@
 
 | 方法 | 路径 | 文件:行 |
 |---|---|---|
-| GET | `/api/socialV2/people` | src/console/routes/memory.js:137 |
-| POST | `/api/socialV2/memory-append` | src/console/routes/memory.js:163 |
-| POST | `/api/socialV2/memory-update` | src/console/routes/memory.js:267 |
-| GET | `/api/socialV2/memory` | src/console/routes/memory.js:355 |
-| POST | `/api/socialV2/memory-remove` | src/console/routes/memory.js:497 |
-| POST | `/api/socialV2/memory-clear` | src/console/routes/memory.js:531 |
+| GET | `/api/socialV2/people` | src/console/routes/memory.js:138 |
+| POST | `/api/socialV2/memory-append` | src/console/routes/memory.js:164 |
+| POST | `/api/socialV2/memory-update` | src/console/routes/memory.js:268 |
+| GET | `/api/socialV2/memory` | src/console/routes/memory.js:356 |
+| POST | `/api/socialV2/memory-remove` | src/console/routes/memory.js:501 |
+| POST | `/api/socialV2/memory-clear` | src/console/routes/memory.js:535 |
 
 ## handleQzone1（8 条）
 
@@ -218,7 +220,7 @@
 
 | 方法 | 路径 | 文件:行 |
 |---|---|---|
-| POST | `/api/authorize/read` | src/console/routes/admin.js:631 |
+| POST | `/api/authorize/read` | src/console/routes/admin.js:664 |
 
 ## handleImageMessageAndLegacySend（6 条）
 
@@ -235,8 +237,8 @@
 
 | 方法 | 路径 | 文件:行 |
 |---|---|---|
-| POST | `/api/session/reset` | src/console/routes/admin.js:711 |
-| POST | `/api/workspace/reset` | src/console/routes/admin.js:765 |
-| POST | `/api/restart` | src/console/routes/admin.js:823 |
+| POST | `/api/session/reset` | src/console/routes/admin.js:744 |
+| POST | `/api/workspace/reset` | src/console/routes/admin.js:798 |
+| POST | `/api/restart` | src/console/routes/admin.js:856 |
 
-总计：25 个 handler、110 条路由。
+总计：25 个 handler、112 条路由。

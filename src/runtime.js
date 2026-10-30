@@ -59,7 +59,7 @@ function readActivityTail(n) {
 // QQ 活动日志：每次收发都追加一行，供 WebUI 侧 agent 汇报 QQ 动态。
 function appendActivity(line) {
   try {
-    const ts = new Date().toISOString().slice(11, 19);
+    const ts = clockHms();
     // 只保留最近 500 行
     appendCappedLine(ACTIVITY_LOG, `[${ts}] ${ctx.redactSensitiveText(String(line).replace(/[\r\n]+/g, ' '))}\n`, { cap: 500 });
   } catch { /* 写活动日志失败不能影响主流程：日志是旁路，失败就丢掉这一行 */ }
@@ -153,10 +153,15 @@ function releaseLock() {
   } catch { /* 同上：退出时清锁失败不影响退出 */ }
 }
 
+// 日志时间戳用**本地时间**（2026-10-29 修：原来用 toISOString 取的是 UTC，比北京时间慢 8 小时，排查时对不上）
+function clockHms(d = new Date()) {
+  return [d.getHours(), d.getMinutes(), d.getSeconds()].map((n) => String(n).padStart(2, '0')).join(':');
+}
+
 // ── 工具 ────────────────────────────────────────────────────────────────────
 // 日志同时输出到 stdout 与 state/bridge.log（守护窗口不可见时也能排查）
 function log(...args) {
-  const line = `${new Date().toISOString().slice(11, 19)} [bridge] ${args.map((a) => ctx.redactSensitiveText(typeof a === 'string' ? a : JSON.stringify(a))).join(' ')}`.replace(/[\r\n]+/g, ' ');
+  const line = `${clockHms()} [bridge] ${args.map((a) => ctx.redactSensitiveText(typeof a === 'string' ? a : JSON.stringify(a))).join(' ')}`.replace(/[\r\n]+/g, ' ');
   console.log(line);
   try {
     appendCappedLine(BRIDGE_LOG, line + '\n', { cap: 2000 });

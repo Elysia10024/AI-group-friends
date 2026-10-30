@@ -392,7 +392,40 @@ export async function handleAdminConfigSecurity(ctx) {
   }
 
   async function routeSecurityPost() {
-    if (req.method === 'POST' && url.pathname === '/api/security') {
+    // 群管理员（委派）：GET 读取 / POST 整表保存 { "群号": [QQ, ...] }
+  if (req.method === 'GET' && url.pathname === '/api/group-admins') {
+    sendJson({ ok: true, groupAdmins: cfg.groupAdmins ?? {} });
+    return true;
+  }
+  if (req.method === 'POST' && url.pathname === '/api/group-admins') {
+    try {
+      const bodyGa = await readBody();
+      const rawGa = bodyGa?.groupAdmins ?? bodyGa ?? {};
+      const outGa = {};
+      for (const [gid, list] of Object.entries(rawGa)) {
+        if (!/^\d{5,12}$/.test(String(gid))) throw new Error(`群号不合法：${gid}`);
+        if (!Array.isArray(list)) throw new Error(`群 ${gid} 的管理员必须是数组`);
+        const qqs = [...new Set(list.map((x) => String(x).trim()).filter(Boolean))];
+        for (const qq of qqs) {
+          if (!/^\d{5,12}$/.test(qq)) throw new Error(`QQ 不合法：${qq}`);
+          if (qq === String(cfg.ownerQQ ?? '')) throw new Error('主人自己不用设为群管理员');
+        }
+        if (qqs.length) outGa[String(gid)] = qqs;
+      }
+      const configFile = path.join(ROOT, 'config.json');
+      const file = readJsonSafe(configFile, null, true);
+      if (!file || typeof file !== 'object') throw new Error('config.json 读不出来');
+      file.groupAdmins = outGa;
+      atomicWriteJson(configFile, file);
+      if (cfg && typeof cfg === 'object') cfg.groupAdmins = outGa; // 热生效
+      log(`控制台：群管理员已更新（${Object.keys(outGa).length} 个群）`);
+      sendJson({ ok: true, groupAdmins: outGa });
+    } catch (error) {
+      sendJson({ ok: false, error: String(error?.message ?? error) }, 400);
+    }
+    return true;
+  }
+  if (req.method === 'POST' && url.pathname === '/api/security') {
       const body = await readBody();
       const configFile = path.join(ROOT, 'config.json');
       const file = readJsonSafe(configFile, null, true);

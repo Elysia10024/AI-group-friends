@@ -1431,3 +1431,33 @@ document.getElementById('biliTargets').addEventListener('click', async (ev) => {
     if (!r.ok) alert(r.error || '操作失败'); else loadBilibili();
   }
 });
+
+// ── 群管理员（委派）──
+async function loadGroupAdmins() {
+  const ta = document.getElementById('gaText');
+  if (!ta) return;
+  try {
+    const r = await api('/api/group-admins');
+    const ga = r?.groupAdmins || {};
+    ta.value = Object.entries(ga).map(([gid, list]) => `${gid} ${(list || []).join(' ')}`).join('\n');
+  } catch (e) { const m = document.getElementById('gaMsg'); if (m) m.textContent = '读取失败：' + (e.message || e); }
+}
+async function saveGroupAdmins() {
+  const msg = document.getElementById('gaMsg');
+  const ta = document.getElementById('gaText');
+  if (!ta) return;
+  const out = {};
+  for (const line of String(ta.value || '').split('\n').map((x) => x.trim()).filter(Boolean)) {
+    const [gid, ...qqs] = line.split(/\s+/);
+    if (!/^\d{5,12}$/.test(gid)) { if (msg) msg.textContent = '群号不合法：' + gid; return; }
+    out[gid] = qqs;
+  }
+  try {
+    const r = await api('/api/group-admins', 'POST', { groupAdmins: out });
+    if (msg) msg.textContent = r?.ok ? '已保存（热生效）' : '保存失败：' + (r?.error || '未知');
+    if (r?.ok) setTimeout(loadGroupAdmins, 300);
+  } catch (e) { if (msg) msg.textContent = '保存失败：' + (e.message || e); }
+}
+document.getElementById('gaSave')?.addEventListener('click', saveGroupAdmins);
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', loadGroupAdmins);
+else loadGroupAdmins();

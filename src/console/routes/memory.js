@@ -12,6 +12,7 @@
 //   Object.assign(Object.create(deps), { req, res, url, sendJson, readBody, gateSendTool })
 // 用 Object.create(deps) 而不是展开，是为了让 deps 上的 get/set 访问器继续生效。
 import { recallAcrossConversations, parseSinceMs } from '../../core/memory-recall.js';
+import { redactText } from '../../core/cross-memory.js';
 import { mergeImpressionRecords } from '../../core/memory.js';
 import { memoryFilePath } from '../../core/memory-files.js';
 import { applyMoodEvent } from '../../core/mood.js';
@@ -465,6 +466,7 @@ export async function handlePeopleMemoryRoutes(ctx) {
         }
         return { key: conv.key, memory: { ...conv.memory, memberImpressions: imps } };
       });
+      const aliasOf = Object.fromEntries(Object.entries(getPeople() ?? {}).filter(([, rec]) => rec?.codeName).map(([q, rec]) => [q, String(rec.codeName)]));
       const recall = otherConversations.length
         ? recallAcrossConversations({
           conversations: labelledConversations,
@@ -475,6 +477,8 @@ export async function handlePeopleMemoryRoutes(ctx) {
           max: Math.min(8, limit)
         })
         : [];
+      // 跨会话结果同样脱敏：不把真实 QQ/群号/昵称带进当前会话
+      const recallSafe = recall.map((line) => redactText(line, { people: getPeople() ?? {}, aliases: aliasOf }));
       sendJson({
         ok: true,
         key,
@@ -485,8 +489,8 @@ export async function handlePeopleMemoryRoutes(ctx) {
         timedTraitsHint: timedTraitsOut.length
           ? '每条印象都带时间：firstAt=最早提到、lastAt=最近提到、hits=提过几次。被问"这是什么时候的事"就照它答，别答"记不清"。'
           : undefined,
-        recall: recall.length ? recall : undefined,
-        recallHint: recall.length ? '上面这些来自**别的会话**（已在每行标出是哪个群/私聊），回答时要说清是在哪儿说的。' : undefined
+        recall: recallSafe.length ? recallSafe : undefined,
+        recallHint: recallSafe.length ? '上面这些来自**别的会话**（已在每行标出是哪个群/私聊），回答时要说清是在哪儿说的。' : undefined
       });
       return true;
     }
