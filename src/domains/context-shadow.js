@@ -45,6 +45,7 @@ export function createContextShadowModule(ctx) {
     isRoleplay,
     log,
     readJsonSafe,
+    recentBiliNotes = () => [],
     flags,
   } = ctx;
 
@@ -205,7 +206,25 @@ export function createContextShadowModule(ctx) {
       // 表达方式（「场景 → 怎么说」）：只给这个群确认过的，最多 3 条；扮演期间不给。
       roleplay ? '' : getExpressionBlock(key),
       // 图库清单是小鲸鱼的东西：扮演期间不给她看（宠物连发图工具都没有，2026-10-27 隔离）。
-      roleplay ? '' : imageLibraryIndexText()
+      roleplay ? '' : imageLibraryIndexText(),
+      // 她最近看过的视频（自刷 + 群友分享）：2026-10-30 主人发现"问她刷过什么视频，她说没刷过"——
+      // 记录在 state/bili-notes.json 但材料里没带，她看不见自己刷过什么。这里补最近 5 条。
+      roleplay ? '' : (() => {
+        try {
+          const notes = recentBiliNotes(5);
+          if (!Array.isArray(notes) || !notes.length) return '';
+          const lines = notes.map((n) => {
+            const d = new Date(Number(n?.at) || 0);
+            const hh = String(d.getHours()).padStart(2, '0');
+            const mm = String(d.getMinutes()).padStart(2, '0');
+            const k = String(n?.key || '');
+            const where = k.startsWith('group:') ? '群里' : k.startsWith('private:') ? '私聊里' : '';
+            const how = n?.source === 'share' ? '别人分享的' : '自己刷到的';
+            return `- ${hh}:${mm} ${where}${how}：《${String(n?.title || '').slice(0, 30)}》`;
+          });
+          return `【你最近看过的视频】（你自己刷到的/别人分享的，聊到视频时可以提）\n${lines.join('\n')}`;
+        } catch { return ''; }
+      })()
     ].filter(Boolean).join('\n\n');
     const trigger = [
       wakeReasonLine(extra.wakeReason || st.lastWakeReason),

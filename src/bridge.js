@@ -886,6 +886,8 @@ async function main() {
     getOverlay: (key) => conversationOverlay(key),
     // 本地图库清单（facts 块）：她能发哪些图、名字即语义。
     imageLibraryIndexText,
+    // 她最近看过的视频（自刷 + 分享）：懒引用 biliScrollMod（它在下面才构造），材料里补"你最近看过的视频"块。
+    recentBiliNotes: (n) => (typeof biliScrollMod !== 'undefined' && biliScrollMod ? biliScrollMod.recentNotes(n) : []),
     log,
     readJsonSafe,
   });

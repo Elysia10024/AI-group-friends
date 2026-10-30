@@ -188,5 +188,16 @@ export function createBiliScrollModule(ctx) {
     };
   }
 
-  return { start, stop, scroll, status, shareMeta, onWakeDelivered };
+  /** 最近看过的视频（自刷 + 群友分享），供材料里"你最近看过的视频"块使用。 */
+  function recentNotes(limit = 5) {
+    try {
+      const store = readJsonSafe(notesFile, { version: 1, notes: [] });
+      const notes = Array.isArray(store?.notes) ? store.notes : [];
+      return notes.slice(-Math.max(1, Math.min(10, Number(limit) || 5)));
+    } catch {
+      return [];
+    }
+  }
+
+  return { start, stop, scroll, status, shareMeta, onWakeDelivered, recentNotes };
 }
