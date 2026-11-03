@@ -57,7 +57,7 @@ export function createVoiceOutModule(ctx) {
     }
   }
 
-  async function synthesize(text) {
+  async function synthesizeOnce(text) {
     try {
       const res = await fetch(`${workerUrl}/speak`, {
         method: 'POST',
@@ -73,6 +73,22 @@ export function createVoiceOutModule(ctx) {
     } catch (error) {
       return { ok: false, error: `TTS 不可用：${typeName(error)}: ${error?.message ?? error}` };
     }
+  }
+
+  // 2026-11-03：游戏退出后 GPU steward 会把语音切回 CUDA（杀掉 api_v2 重启），冷启动约 50 秒。
+  // 她正好在这窗口里发语音就会失败、还说"嗓子罢工"——这里对"不可用/未就绪"做 3 次重试（间隔 3 秒），
+  // 覆盖常见冷启动尾巴；真正的内容类错误（文字太长等）不重试。
+  async function synthesize(text) {
+    let last = null;
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const result = await synthesizeOnce(text);
+      if (result.ok) return result;
+      last = result;
+      const retryable = /TTS 不可用|HTTP 5\d\d|not ready|loading|warm/i.test(String(result.error ?? ''));
+      if (!retryable || attempt === 2) return result;
+      await sleep(3000);
+    }
+    return last;
   }
 
   /**
