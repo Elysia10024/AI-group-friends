@@ -167,13 +167,19 @@ export function decideWake({
   const tr = st.wakeConfig?.triggers ?? {};
   if (tr.anyMessage) return { reason: 'anyMessage' };
 
+  const messageSegs = Array.isArray(event?.message) ? event.message : [];
+  const selfId = String(event?.self_id ?? '');
+  // @ 了别人（且没 @ 自己）：名字/关键词的"子串匹配"不该再唤醒——别的群友名字里带"大肥鱼"时，
+  // @ 他会让小鲸鱼误以为在叫她（2026-11-03 主人报的问题）。@ 全体（all）不算 @ 别人。
+  const atSegs = messageSegs.filter((seg) => seg?.type === 'at' && String(seg?.data?.qq ?? '') !== '' && String(seg.data.qq) !== 'all');
+  const atSelf = atSegs.some((seg) => String(seg.data.qq) === selfId);
+  const atOthers = atSegs.some((seg) => String(seg.data.qq) !== selfId) && !atSelf;
+
   if (tr.atMention) {
-    const atSelf = Array.isArray(event?.message)
-      && event.message.some((seg) => seg?.type === 'at' && String(seg.data?.qq) === String(event?.self_id ?? ''));
     if (atSelf || quoteTargetIsSelf) return { reason: 'atMention' };
   }
 
-  if (tr.nameMention) {
+  if (tr.nameMention && !atOthers) {
     const lower = String(textContent ?? '').toLowerCase();
     if (selfNickname && (lower.includes('@' + selfNickname.toLowerCase()) || lower.includes(selfNickname.toLowerCase()))) {
       return { reason: 'nameMention' };
@@ -182,7 +188,7 @@ export function decideWake({
     if (mentionsAlias(lower, selfAliases)) return { reason: 'nameMention' };
   }
 
-  if (Array.isArray(tr.keywords) && tr.keywords.length) {
+  if (Array.isArray(tr.keywords) && tr.keywords.length && !atOthers) {
     const allowKw = allowedKeywords(cfg);
     const lower = String(plainContent ?? '').toLowerCase();
     for (const kw of tr.keywords) {

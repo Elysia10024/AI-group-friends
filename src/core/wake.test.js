@@ -218,3 +218,18 @@ test('event 为空对象不炸', () => {
 test('st 为 null 会抛错（与原实现一致：唯一调用点保证非 null，抛错是响亮失败）', () => {
   assert.throws(() => dec({ st: null }));
 });
+
+// ---------------- @ 别人时的名字误唤醒（2026-11-03） ----------------
+test('@ 别人时不因名字/关键词子串误唤醒（群里另一个"大肥鱼"）', () => {
+  const self = { selfNickname: NICK, selfAliases: new Set(['大肥鱼']) };
+  const text = '大肥鱼 你说呢';
+  // @ 别人 + 文本里带"大肥鱼" → 不唤醒
+  const atOther = [{ type: 'at', data: { qq: '999999' } }, { type: 'text', data: { text } }];
+  assert.equal(reason({ event: ev({ message: atOther }), textContent: text, plainContent: text, ...self }), null);
+  // @ 自己 → 照常 atMention
+  const atSelf = [{ type: 'at', data: { qq: SELF_ID } }, { type: 'text', data: { text } }];
+  assert.equal(reason({ event: ev({ message: atSelf }), textContent: text, plainContent: text, ...self }), 'atMention');
+  // 纯文本叫"大肥鱼"（没 @ 任何人）→ 仍然唤醒
+  const plain = [{ type: 'text', data: { text } }];
+  assert.equal(reason({ event: ev({ message: plain }), textContent: text, plainContent: text, ...self }), 'nameMention');
+});
