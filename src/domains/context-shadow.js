@@ -204,6 +204,24 @@ export function createContextShadowModule(ctx) {
           return lines.length ? `【你和他们的关系】\n${lines.join('\n')}` : '';
         } catch { return ''; }
       })(),
+      // 同名提醒：本会话最近说话的人里名字重复（有人换过一样的头像/名片）→ 显式标 QQ。
+      // 2026-11-04 主人要求：认人以 QQ 为主、名字名片为辅。
+      roleplay ? '' : (() => {
+        try {
+          const byName = new Map();
+          for (const m of (Array.isArray(st?.recentMessages) ? st.recentMessages : [])) {
+            const qq = String(m?.userId ?? m?.user_id ?? '').trim();
+            const name = String(m?.sender ?? '').trim();
+            if (!qq || !name) continue;
+            if (!byName.has(name)) byName.set(name, new Set());
+            byName.get(name).add(qq);
+          }
+          const dup = [...byName.entries()].filter(([, qs]) => qs.size > 1).slice(0, 3);
+          if (!dup.length) return '';
+          const lines = dup.map(([name, qs]) => `- 「${name}」有 ${qs.size} 个人：${[...qs].map((q) => `QQ ${q}`).join('、')}——认人看 QQ，别当成一个人`);
+          return `【同名提醒】\n${lines.join('\n')}`;
+        } catch { return ''; }
+      })(),
       // 同一个人、不同叫法：当前会话出现的人若在其他会话有别的名字，显式说明是同一人（2026-10-30 主人要求）。
       roleplay ? '' : (() => {
         try {

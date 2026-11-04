@@ -82,5 +82,5 @@ test('关系行带上"最近影响关系的那句话 + 时间"（她自己看得
   assert.match(suffix, /他骂过我/);
   assert.equal(relationNoteSuffix({}), '', '没记过就留空');
   const lines = relationLines({ people: { 1: { relation: '讨厌', relationNote: '骂过我', relationNoteAt: at } }, speakers: [{ userId: '1', sender: 'Qruei' }] });
-  assert.match(lines[0], /Qruei：讨厌（10-12 00:11：骂过我）/);
+  assert.match(lines[0], /Qruei（QQ 1）：讨厌（10-12 00:11：骂过我）/, '关系行带 QQ（认人以 QQ 为主）');
 });

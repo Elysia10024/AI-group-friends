@@ -99,7 +99,8 @@ export function relationLines({ people = {}, speakers = [], max = 8, now = Date.
     if (!qq || !rel || seen.has(qq)) continue;
     seen.add(qq);
     const name = String(s?.sender ?? qq).trim() || qq;
-    out.push(`- ${name}：${rel}${relationNoteSuffix(rec, now)}`);
+    // 关系行带 QQ：群里有人用过一样的头像/名片（AF 事件，2026-11-04），认人要以 QQ 为主、名字为辅。
+    out.push(`- ${name}（QQ ${qq}）：${rel}${relationNoteSuffix(rec, now)}`);
     if (out.length >= max) break;
   }
   return out;
