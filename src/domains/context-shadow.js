@@ -200,7 +200,7 @@ export function createContextShadowModule(ctx) {
       (() => {
         try {
           if (roleplay) return '';                     // 扮演期间不给她看小鲸鱼的关系表
-          const lines = relationLines({ people: getPeople(), speakers: st?.recentMessages ?? [], max: 8 });
+          const lines = relationLines({ people: getPeople(), speakers: st?.recentMessages ?? [], max: 5 });
           return lines.length ? `【你和他们的关系】\n${lines.join('\n')}` : '';
         } catch { return ''; }
       })(),
