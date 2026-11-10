@@ -1560,7 +1560,8 @@ async function main() {
     // onWakeDelivered 在投递后清空待分享池：同一条视频不反复提（投递失败也清，最多丢一次分享机会）。
     onWake: async () => {
       // 角色扮演（宠物等）期间不自刷 B 站：学习和看视频是"小鲸鱼"的功能（2026-10-27 隔离）。
-      const scrollKey = String(cfg.biliScroll?.groupKey || 'group:20000001');
+      const scrollKeys = Array.isArray(cfg.biliScroll?.groupKeys) && cfg.biliScroll.groupKeys.length ? cfg.biliScroll.groupKeys.map(String) : [String(cfg.biliScroll?.groupKey || 'group:20000001')];
+  const scrollKey = scrollKeys[Math.floor(Math.random() * scrollKeys.length)];
       if (isPlayingRole(scrollKey)) return;
       await sendWakePromptV2(scrollKey, 'biliScroll');
       biliScrollMod.onWakeDelivered();
