@@ -32,7 +32,7 @@
 | `check-tool-refs.mjs` | check:tool-refs —— 她读到的规则里，引用的工具名必须真实存在。 | npm+selfcheck |
 | `check-tool-schema.mjs` | 工具 schema 与说明的一致性自检：**说明里承诺的参数，schema 里必须真的有**。 | selfcheck |
 | `check-tool-token.mjs` | 工具令牌接线守卫：v2 工具的会话令牌必须**真的挂到请求头上**，不能只写在工具说明里。 | npm+selfcheck |
-| `check-voice-spec.mjs` | 嗓音配方（<项目根>\tts\her-voice.json）的静态体检：**这个文件是她的声音的唯一真源**， | npm+selfcheck |
+| `check-voice-spec.mjs` | 嗓音配方（<项目根>\voice-stack\preset.json）的静态体检：**这个文件是她的声音的唯一真源* | npm+selfcheck |
 | `clean-orphan-comments.mjs` | 清掉"抬块落下的段落路标"。 | — |
 | `console-ctx-audit.mjs` | 审计控制台路由的 ctx 依赖：路由模块从 ctx 解构名字，而 ctx 来自 | npm+selfcheck |
 | `dedupe-memory.mjs` | 一次性清理：把已经攒下来的**近似重复印象**按 core/memory.js 的同一套规则合并。 | — |

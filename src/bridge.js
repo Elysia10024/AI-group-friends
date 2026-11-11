@@ -844,7 +844,7 @@ async function main() {
   } = socialStateMod;
   // 她的活动公共日志（2026-10-30 主人要求）：刷视频/发图/说话统一记到 state/whale-activity.json，
   // 跨会话共享——换群/私聊不能"失忆"。
-  const whaleActivityMod = createWhaleActivityModule({ stateDir: STATE_DIR, readJsonSafe, atomicWriteJson });
+  const whaleActivityMod = createWhaleActivityModule({ stateDir: STATE_DIR, readJsonSafe, atomicWriteJson, });
   // A1.0 影子组装（只读旁路）：照常走长会话，另外留一份"新方案会给她看什么"。
   // 设计见 docs/上下文组装设计.md；开关在 cfg.socialV2.context.assembler。
   // **必须在 socialStateMod 之后构造**（要它的 getSocialV2State/formatMemoryV2，
@@ -1597,6 +1597,7 @@ async function main() {
     modeAllowed,
     ROOT,
     appendActivity,
+    recordActivity: (input) => whaleActivityMod.record(input),
     atomicWriteJson,
     readJsonSafe,
     stickerEnabled,
