@@ -4,6 +4,25 @@
 // 空闲时段/间隔/日上限都在 domains/bili-scroll.js 里硬校验。
 export async function handleBiliScroll(ctx) {
   const { req, url, sendJson, readBody, agentTokenOk, v2SessionAllowed, biliScroll } = ctx;
+  // 她看完视频后记"学到的东西"
+  if (req.method === 'POST' && url.pathname === '/api/socialV2/bili-learn') {
+    const body = await readBody();
+    const key = String(body.key ?? '').trim();
+    const token = String(req.headers['x-agent-token'] ?? '');
+    if (!key) { sendJson({ ok: false, error: 'key 不能为空' }, 400); return true; }
+    if (!token) { sendJson({ ok: false, error: '缺 agent token' }, 403); return true; }
+    if (!agentTokenOk(key, token)) { sendJson({ ok: false, error: 'agent token 无效' }, 403); return true; }
+    const out = await biliScroll.recordLearning({
+      bv: body.bv ?? body.bvid ?? '',
+      title: body.title ?? '',
+      summary: body.summary ?? '',
+      key,
+      source: body.source === 'share' ? 'share' : 'self'
+    });
+    sendJson(out.ok ? { ok: true, learning: out.learning } : { ok: false, error: out.error }, out.ok ? 200 : 400);
+    return true;
+  }
+
   if (req.method !== 'POST' || url.pathname !== '/api/socialV2/bili-scroll') return false;
 
   const body = await readBody();

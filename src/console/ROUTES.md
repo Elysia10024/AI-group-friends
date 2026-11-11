@@ -80,9 +80,9 @@
 
 | 方法 | 路径 | 文件:行 |
 |---|---|---|
-| POST | `/api/socialV2/send-poke` | src/console/routes/send.js:66 |
-| POST | `/api/socialV2/send-message` | src/console/routes/send.js:148 |
-| POST | `/api/socialV2/send-burst` | src/console/routes/send.js:271 |
+| POST | `/api/socialV2/send-poke` | src/console/routes/send.js:67 |
+| POST | `/api/socialV2/send-message` | src/console/routes/send.js:149 |
+| POST | `/api/socialV2/send-burst` | src/console/routes/send.js:274 |
 
 ## handleStickerImageRoutes（7 条）
 
@@ -100,10 +100,10 @@
 
 | 方法 | 路径 | 文件:行 |
 |---|---|---|
-| POST | `/api/socialV2/reload-memory` | src/console/routes/send.js:428 |
-| POST | `/api/socialV2/send-voice` | src/console/routes/send.js:446 |
-| POST | `/api/socialV2/send-image` | src/console/routes/send.js:517 |
-| POST | `/api/socialV2/send-sticker` | src/console/routes/send.js:605 |
+| POST | `/api/socialV2/reload-memory` | src/console/routes/send.js:431 |
+| POST | `/api/socialV2/send-voice` | src/console/routes/send.js:449 |
+| POST | `/api/socialV2/send-image` | src/console/routes/send.js:520 |
+| POST | `/api/socialV2/send-sticker` | src/console/routes/send.js:608 |
 
 ## handleStickerCollectRoutes（6 条）
 
@@ -120,8 +120,8 @@
 
 | 方法 | 路径 | 文件:行 |
 |---|---|---|
-| POST | `/api/socialV2/check-send` | src/console/routes/send.js:726 |
-| POST | `/api/socialV2/wait` | src/console/routes/send.js:760 |
+| POST | `/api/socialV2/check-send` | src/console/routes/send.js:729 |
+| POST | `/api/socialV2/wait` | src/console/routes/send.js:763 |
 
 ## handleSocialV2LogsFeedback（6 条）
 
@@ -138,7 +138,7 @@
 
 | 方法 | 路径 | 文件:行 |
 |---|---|---|
-| POST | `/api/socialV2/record-sent` | src/console/routes/send.js:898 |
+| POST | `/api/socialV2/record-sent` | src/console/routes/send.js:901 |
 
 ## handleSocialV2MessageDetail（1 条）
 
@@ -201,11 +201,12 @@
 | GET | `/api/socialV2/bili-look` | src/console/routes/bili-look.js:34 |
 | GET | `/api/socialV2/bili-zoom` | src/console/routes/bili-look.js:55 |
 
-## handleBiliScroll（1 条）
+## handleBiliScroll（2 条）
 
 | 方法 | 路径 | 文件:行 |
 |---|---|---|
-| POST（排除式） | `/api/socialV2/bili-scroll` | src/console/routes/bili-scroll.js:7 |
+| POST | `/api/socialV2/bili-learn` | src/console/routes/bili-scroll.js:8 |
+| POST（排除式） | `/api/socialV2/bili-scroll` | src/console/routes/bili-scroll.js:26 |
 
 ## handleSlangAiAndExpressionRoutes（4 条）
 
@@ -241,4 +242,4 @@
 | POST | `/api/workspace/reset` | src/console/routes/admin.js:798 |
 | POST | `/api/restart` | src/console/routes/admin.js:856 |
 
-总计：25 个 handler、112 条路由。
+总计：25 个 handler、113 条路由。

@@ -7,6 +7,7 @@
 import path from 'node:path';
 import { BILI_SCROLL_DEFAULTS, appendShareItem, inShareQuietHours, pickCandidate, scrollQuota } from '../core/bili-scroll.js';
 import { appendNote, makeNote } from '../core/bili-notes.js';
+import { appendLearning, makeLearning } from '../core/bili-learnings.js';
 import { idleHoursOnDay, isIdleTime } from '../core/idle-time.js';
 import { localDayKey } from '../core/local-day.js';
 import { signWbi } from '../core/bilibili.js';
@@ -18,6 +19,8 @@ export function createBiliScrollModule(ctx) {
   const stateFile = path.join(stateDir, 'bili-scroll.json');
   // 看过的视频笔记（2026-10-25）：独立文件，和配额状态分开，方便以后单独检索/注入材料。
   const notesFile = path.join(stateDir, 'bili-notes.json');
+  // 她自己的学习记录（2026-11-11）：从看过的视频里提炼的一句话要点。
+  const learningsFile = path.join(stateDir, 'bili-learnings.json');
   let state = readJsonSafe(stateFile, { version: 1 });
   if (!state || typeof state !== 'object' || Array.isArray(state)) state = { version: 1 };
 
@@ -276,5 +279,28 @@ async function fetchPopular() {
     }
   }
 
-  return { start, stop, scroll, status, shareMeta, onWakeDelivered, recentNotes };
+  /** 记一条"学到的东西"（bv/summary 由 core/bili-learnings 校验）。 */
+  function recordLearning(input) {
+    try {
+      const store = readJsonSafe(learningsFile, { version: 1, items: [] });
+      const learn = makeLearning({ ...input });
+      if (!learn) return { ok: false, error: 'bv 或 summary 不合法' };
+      const items = appendLearning(Array.isArray(store?.items) ? store.items : [], learn);
+      atomicWriteJson(learningsFile, { version: 1, items });
+      log(`[bili-learn] 记下 ${learn.bv}：${learn.summary.slice(0, 40)}`);
+      return { ok: true, learning: learn };
+    } catch (error) {
+      return { ok: false, error: String(error?.message ?? error) };
+    }
+  }
+
+  /** 最近 N 条学习记录（材料用）。 */
+  function recentLearnings(limit = 3) {
+    try {
+      const store = readJsonSafe(learningsFile, { version: 1, items: [] });
+      return (Array.isArray(store?.items) ? store.items : []).slice(-Math.max(1, Math.min(10, Number(limit) || 3)));
+    } catch { return []; }
+  }
+
+  return { start, stop, scroll, status, shareMeta, onWakeDelivered, recentNotes, recordLearning, recentLearnings };
 }

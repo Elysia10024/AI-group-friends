@@ -894,6 +894,8 @@ async function main() {
     recentBiliNotes: (n) => (typeof biliScrollMod !== 'undefined' && biliScrollMod ? biliScrollMod.recentNotes(n) : []),
     // 她的活动公共日志（最近 N 条，跨会话）。
     recentActivity: (n) => whaleActivityMod.recent(n),
+    // 她学到的东西：看完视频记的要点，材料里带最近 3 条。
+    recentLearnings: (n) => (typeof biliScrollMod !== "undefined" && biliScrollMod ? biliScrollMod.recentLearnings(n) : []),
     log,
     readJsonSafe,
   });

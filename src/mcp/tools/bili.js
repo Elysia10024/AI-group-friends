@@ -91,4 +91,28 @@ export function registerBiliTools(server, { agentApi }) {
       }
     }
   );
+  server.tool(
+    'qq_bili_learn',
+    '把看过的 B 站视频里"学到的东西"记一条（一句话要点，<=120 字）。刷视频/看完视频后调用；以后聊到相关话题时材料里会带【你最近学到的东西】。',
+    {
+      key: z.string().describe('会话 key，格式 group:群号 或 private:QQ号'),
+      url: z.string().describe('B 站视频链接或 BV 号'),
+      summary: z.string().describe('一句话要点（你从视频里学到的，别抄简介）'),
+      token: z.string().describe('会话令牌（必填，见唤醒提示中的【会话令牌】）')
+    },
+    async ({ key, url, summary, token }) => {
+      try {
+        const data = await agentApi('/api/socialV2/bili-learn', {
+          method: 'POST',
+          body: JSON.stringify({ key, bv: url, summary }),
+          headers: { 'x-agent-token': token },
+          timeoutMs: 30000
+        });
+        return { content: [{ type: 'text', text: data?.ok ? `记下了：${data?.learning?.summary ?? summary}` : `记录失败：${data?.error ?? '未知'}` }] };
+      } catch (error) {
+        return { content: [{ type: 'text', text: `记录失败：${error?.message ?? error}` }], isError: true };
+      }
+    }
+  );
+
 }

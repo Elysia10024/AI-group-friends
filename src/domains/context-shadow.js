@@ -22,6 +22,7 @@ import { relationLines } from '../core/relation.js';
 import { renderMomBlock } from '../core/mom-channel.js';
 import { pickCrossEntries, formatCrossBlock, redactText } from '../core/cross-memory.js';
 import { formatActivityBlock } from '../core/whale-activity.js';
+import { formatLearningsBlock } from '../core/bili-learnings.js';
 
 import { readStateFile, stamp } from '../core/state-schema.js';
 
@@ -48,6 +49,7 @@ export function createContextShadowModule(ctx) {
     readJsonSafe,
     recentBiliNotes = () => [],
     recentActivity = () => [],
+    recentLearnings = () => [],
     flags,
   } = ctx;
 
@@ -244,6 +246,13 @@ export function createContextShadowModule(ctx) {
       // 表达方式（「场景 → 怎么说」）：只给这个群确认过的，最多 3 条；扮演期间不给。
       roleplay ? '' : getExpressionBlock(key),
       // 她的活动公共日志（最近 5 条）：刷视频/发图/说过的话，跨会话可见，昵称做代号脱敏。
+      // 她学到的东西（看完视频记的要点）：最近 3 条，跨轮次可回顾。
+      roleplay ? '' : (() => {
+        try {
+          const learns = recentLearnings(3);
+          return formatLearningsBlock(learns, { limit: 3 });
+        } catch { return ''; }
+      })(),
       roleplay ? '' : (() => {
         try {
           const acts = recentActivity(5);
