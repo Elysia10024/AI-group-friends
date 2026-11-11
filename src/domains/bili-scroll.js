@@ -9,6 +9,7 @@ import { BILI_SCROLL_DEFAULTS, appendShareItem, inShareQuietHours, pickCandidate
 import { appendNote, makeNote } from '../core/bili-notes.js';
 import { idleHoursOnDay, isIdleTime } from '../core/idle-time.js';
 import { localDayKey } from '../core/local-day.js';
+import { signWbi } from '../core/bilibili.js';
 
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
 
@@ -44,7 +45,68 @@ export function createBiliScrollModule(ctx) {
     }
   }
 
-  async function fetchPopular() {
+  // ── 偏好 UP 主（2026-11-11 主人要求：多刷某个 UP 主的视频）─────────────────────
+// 复用 bilibili 订阅那套登录态 + WBI 签名拉 UP 动态，再挑 ≤5 分钟的短视频。
+const cookieFile = path.join(stateDir, 'bilibili-cookie.json');
+let cred = null;
+
+async function getCred(force = false) {
+  if (cred && !force && Date.now() - cred.at < 10 * 60 * 1000) return cred;
+  const sessdata = String(readJsonSafe(cookieFile, null)?.sessdata ?? '').trim();
+  if (!sessdata) throw new Error('缺 SESSDATA：state/bilibili-cookie.json');
+  const spi = await getJson('https://api.bilibili.com/x/frontend/finger/spi');
+  const b3 = String(spi?.data?.b_3 ?? '');
+  const b4 = String(spi?.data?.b_4 ?? '');
+  const cookie = [`SESSDATA=${sessdata}`, b3 && `buvid3=${b3}`, b4 && `buvid4=${b4}`, `b_nut=${Math.round(Date.now() / 1000)}`].filter(Boolean).join('; ');
+  const nav = await getJson('https://api.bilibili.com/x/web-interface/nav', { cookie });
+  if (nav?.code !== 0 || nav?.data?.isLogin !== true) throw new Error(`B 站登录态无效（code=${nav?.code ?? '?'}）`);
+  const imgUrl = String(nav?.data?.wbi_img?.img_url ?? '');
+  const subUrl = String(nav?.data?.wbi_img?.sub_url ?? '');
+  const imgKey = imgUrl.slice(imgUrl.lastIndexOf('/') + 1).split('.')[0];
+  const subKey = subUrl.slice(subUrl.lastIndexOf('/') + 1).split('.')[0];
+  cred = { cookie, imgKey, subKey, at: Date.now() };
+  return cred;
+}
+
+async function videoDuration(bvid) {
+  try {
+    const j = await getJson(`https://api.bilibili.com/x/web-interface/view?bvid=${encodeURIComponent(bvid)}`);
+    return Number(j?.data?.duration) || 0;
+  } catch { return 0; }
+}
+
+/** 拉某个 UP 主最近的视频（≤maxDurationSec），返回 pickCandidate 能吃的结构。 */
+async function fetchUpVideos(uid, maxDurationSec = 300) {
+  const c = await getCred();
+  const qs = signWbi({ host_mid: uid, timezone_offset: -480, features: 'itemOpusStyle' }, c.imgKey, c.subKey);
+  const json = await getJson(`https://api.bilibili.com/x/polymer/web-dynamic/v1/feed/space?${qs}`, {
+    'user-agent': UA,
+    accept: 'application/json, text/plain, */*',
+    'accept-language': 'zh-CN,zh;q=0.9',
+    cookie: c.cookie,
+    referer: `https://space.bilibili.com/${uid}/dynamic`,
+    origin: 'https://space.bilibili.com'
+  });
+  if (json?.code !== 0) throw new Error(`动态接口 code=${json?.code} ${json?.message ?? ''}`);
+  const items = Array.isArray(json?.data?.items) ? json.data.items : [];
+  const vids = [];
+  for (const it of items) {
+    if (it?.type !== 'DYNAMIC_TYPE_AV') continue;
+    const arch = it?.modules?.module_dynamic?.major?.archive;
+    const bvid = String(arch?.bvid ?? '').trim();
+    if (!/^BV[0-9A-Za-z]+$/.test(bvid)) continue;
+    vids.push({ bvid, title: String(arch?.title ?? '').trim() });
+    if (vids.length >= 6) break;
+  }
+  const out = [];
+  for (const v of vids) {
+    const d = await videoDuration(v.bvid);
+    if (d > 0 && d <= maxDurationSec) out.push({ bvid: v.bvid, title: v.title, duration: d, tname: '' });
+  }
+  return out;
+}
+
+async function fetchPopular() {
     const json = await getJson('https://api.bilibili.com/x/web-interface/popular?ps=30&pn=1');
     if (json?.code !== 0) throw new Error(`热门接口 code=${json?.code} ${json?.message ?? ''}`);
     return Array.isArray(json?.data?.list) ? json.data.list : [];
@@ -64,8 +126,23 @@ export function createBiliScrollModule(ctx) {
     if (!quota.ok) {
       throw new Error(quota.reason === 'interval' ? '刚刷过，至少隔 1 小时' : '今天已经刷够了');
     }
+    const maxDur = Number(o.maxDurationSec) || 300;
+    const preferUids = Array.isArray(o.preferUids) ? o.preferUids.map(Number).filter((x) => x > 0) : [];
+    let cand = null;
+    if (preferUids.length && Math.random() < (Number(o.preferChance) || 0.6)) {
+    try {
+      const uid = preferUids[Math.floor(Math.random() * preferUids.length)];
+      const upList = await fetchUpVideos(uid, maxDur);
+      cand = pickCandidate(upList, { maxDurationSec: maxDur });
+      if (cand) log(`[bili-scroll] 从偏好 UP ${uid} 挑到 ${cand.bvid}（${cand.title}）`);
+    } catch (e) {
+      log('[bili-scroll] 偏好 UP 拉取失败，回退热门：' + (e?.message ?? e));
+    }
+  }
+    if (!cand) {
     const list = await fetchPopular();
-    const cand = pickCandidate(list, { maxDurationSec: Number(o.maxDurationSec) || 300 });
+    cand = pickCandidate(list, { maxDurationSec: maxDur });
+  }
     if (!cand) throw new Error('热门里没挑到 5 分钟以内的视频');
     const out = await biliLook.watchBv(cand.bvid, { withFrames: o.withFrames !== false });
     const prevCount = state.day === day ? Number(state.count) || 0 : 0;
