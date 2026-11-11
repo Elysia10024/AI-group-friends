@@ -100,6 +100,7 @@ import { createPromptQueueModule } from './domains/prompt-queue.js';
 import { createBilibiliModule } from './domains/bilibili.js';
 import { createBiliLookModule } from './domains/bili-look.js';
 import { createBiliScrollModule } from './domains/bili-scroll.js';
+import { createVideoWorkerModule } from './domains/video-worker.js';
 import { createWhaleActivityModule } from './domains/whale-activity.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -1549,6 +1550,8 @@ async function main() {
     getSocialV2State,
   });
   // 空闲时段自己刷 B 站：每小时最多叫醒一次；真正看视频走 qq_bili_scroll（配额在域里）。
+  // 视频分析 worker：独立 DSH 会话替她看视频（内核冻结也能用，只用现有 API）。
+  const videoWorkerMod = createVideoWorkerModule({ api, cfg, log, stateDir: STATE_DIR, readJsonSafe, atomicWriteJson, });
   const biliScrollMod = createBiliScrollModule({
     cfg,
     log,
@@ -1556,6 +1559,7 @@ async function main() {
     readJsonSafe,
     atomicWriteJson,
     biliLook: biliLookMod,
+    videoWorker: videoWorkerMod,
   });
   biliScrollMod.start({
     // 唤醒的是「坐镇会话」；分享可以跨群（prompt 里给她白名单群列表，她挑 1~2 个发）。

@@ -15,7 +15,7 @@ import { signWbi } from '../core/bilibili.js';
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
 
 export function createBiliScrollModule(ctx) {
-  const { cfg, log, stateDir, readJsonSafe, atomicWriteJson, biliLook } = ctx;
+  const { cfg, log, stateDir, readJsonSafe, atomicWriteJson, biliLook, videoWorker } = ctx;
   const stateFile = path.join(stateDir, 'bili-scroll.json');
   // 看过的视频笔记（2026-10-25）：独立文件，和配额状态分开，方便以后单独检索/注入材料。
   const notesFile = path.join(stateDir, 'bili-notes.json');
@@ -159,6 +159,16 @@ async function fetchPopular() {
     }
     save();
     biliLook.recordHistory({ bv: cand.bvid, title: cand.title, source: 'self', key, frames: out.images.length });
+    // 2026-11-11：让独立的 video-worker 会话"替她看一遍"，把要点记下来（主会话仍可看图）。
+    try {
+      const workerNote = await videoWorker?.analyze?.({ bv: cand.bvid, title: cand.title, images: out.images, text: out.text });
+      if (workerNote) {
+        const learnRes = recordLearning({ bv: cand.bvid, title: cand.title, summary: workerNote.replace(/\s+/g, ' ').slice(0, 120), key, source: 'self' });
+        if (learnRes?.ok) log(`[video-worker] ${cand.bvid} 要点已记：${learnRes.learning.summary.slice(0, 40)}`);
+      }
+    } catch (error) {
+      log('[video-worker] 分析失败：' + (error?.message ?? error));
+    }
     // 看过的视频落成结构化笔记（内容摘要 + 热评）：只活在当轮上下文里太浪费，
     // 存下来以后才能检索、回灌材料（2026-10-25 第 1 步；她的看法仍走 qq_memory_append）。
     let noted = false;
